@@ -25,6 +25,15 @@
 карточки можно описать в manifest заранее, но не нужно выдавать учащемуся незрелые
 материалы.
 
+GitHub переносит из template только default branch, поэтому сразу создайте ref для
+закрытых от случайного просмотра материалов:
+
+    git switch -c course-support
+    git push -u origin course-support
+    git switch -
+
+После этого добавляйте hints, ключи quiz и reference solutions только в эту ветку.
+
 ## Структура
 
 - `curriculum/course.json` — порядок, длительность и условия DONE;
@@ -43,3 +52,12 @@
 
 Для React-курса есть отдельный [профиль](docs/stack-profiles/react.md). Только он
 описывает, как и когда уместно преподавать Feature-Sliced Design.
+
+## Personal progress
+
+Официальный course repository остаётся чистым: учащийся держит решения и
+`answers.json` в личном fork, в ветке `progress/<name>`. После создания fork он
+добавляет официальный курс как `upstream`, делает `git fetch upstream` и запускает
+`pnpm course:sync` из чистой progress-ветки. Команда обновляет personal `master` из
+upstream и вливает его в текущую progress-ветку, не создавая коммитов с решениями в
+официальном репозитории.
