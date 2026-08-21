@@ -1,0 +1,42 @@
+{
+  "version": 1,
+  "language": "ru",
+  "audience": "{{ опишите входные знания учащегося }}",
+  "estimatedHours": {
+    "min": 1,
+    "max": 1
+  },
+  "sessionPolicy": {
+    "minMinutes": 30,
+    "maxMinutes": 60,
+    "singleActiveSession": true,
+    "dependencyMode": "linear-by-default",
+    "startState": "green",
+    "finishState": "green"
+  },
+  "modules": [
+    {
+      "id": "01",
+      "slug": "replace-me",
+      "title": "Замените демонстрационный раздел",
+      "goal": "Сформулируйте первый измеримый результат будущего курса.",
+      "sessions": [
+        {
+          "id": "01-01",
+          "title": "Замените демонстрационную карточку",
+          "minutes": 30,
+          "kind": "observe",
+          "outcome": "Учащийся получает первую реальную завершённую карточку.",
+          "done": "Демонстрационный module заменён автором до публикации курса.",
+          "checks": ["review"]
+        }
+      ]
+    }
+  ],
+  "capstone": {
+    "id": "capstone",
+    "title": "Итоговый проект",
+    "goal": "Опишите проект, который объединяет освоенные результаты.",
+    "sessions": []
+  }
+}

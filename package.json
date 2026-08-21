@@ -1,0 +1,29 @@
+{
+  "name": "ai-supported-course-template",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.5.0",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "session:validate": "node --import tsx packages/session-runner/src/cli.ts validate",
+    "session:next": "node --import tsx packages/session-runner/src/cli.ts next",
+    "session:start": "node --import tsx packages/session-runner/src/cli.ts start",
+    "session:check": "node --import tsx packages/session-runner/src/cli.ts check",
+    "session:review": "node --import tsx packages/session-runner/src/cli.ts review",
+    "session:finish": "node --import tsx packages/session-runner/src/cli.ts finish",
+    "session:hint": "node --import tsx packages/session-runner/src/cli.ts hint",
+    "session:dev": "node --import tsx packages/session-runner/src/cli.ts dev",
+    "course:sync": "node --import tsx packages/session-runner/src/course-sync-cli.ts",
+    "typecheck": "pnpm --filter @training/session-runner typecheck",
+    "test": "pnpm --filter @training/session-runner test"
+  },
+  "devDependencies": {
+    "@types/node": "26.2.0",
+    "tsx": "4.23.12",
+    "typescript": "7.0.2",
+    "vitest": "4.1.10"
+  }
+}
