@@ -51,6 +51,9 @@ export function validateManifest(value: unknown): string[] {
   if (!isRecord(value.sessionPolicy)) {
     problems.push("sessionPolicy должен быть объектом");
   }
+  if (!Array.isArray(value.assumedConcepts)) {
+    problems.push("assumedConcepts должен быть массивом concept ids");
+  }
 
   if (problems.length > 0) {
     return problems;
@@ -112,6 +115,8 @@ export function validateManifest(value: unknown): string[] {
     );
   }
 
+  validateConceptFlow(value, problems);
+
   return problems;
 }
 
@@ -168,7 +173,106 @@ function validateSessions(
         }
       }
     }
+    validateConceptArray(rawSession, id, "requires", problems);
+    validateConceptArray(rawSession, id, "introduces", problems);
+    validateConceptArray(rawSession, id, "defers", problems);
   }
+}
+
+function validateConceptFlow(
+  manifest: Record<string, unknown>,
+  problems: string[]
+): void {
+  const assumed = readConceptArray(manifest.assumedConcepts);
+  if (!assumed) {
+    return;
+  }
+
+  const sessions = collectRawSessions(manifest);
+  const firstIntroductionIndex = new Map<string, number>();
+  for (const [index, session] of sessions.entries()) {
+    for (const concept of readConceptArray(session.introduces) ?? []) {
+      if (!firstIntroductionIndex.has(concept)) {
+        firstIntroductionIndex.set(concept, index);
+      }
+    }
+  }
+
+  const available = new Set(assumed);
+  for (const [sessionIndex, session] of sessions.entries()) {
+    const id = typeof session.id === "string" ? session.id : "unknown";
+    const requires = readConceptArray(session.requires) ?? [];
+    const introduces = readConceptArray(session.introduces) ?? [];
+    const defers = readConceptArray(session.defers) ?? [];
+
+    for (const concept of requires) {
+      if (!available.has(concept)) {
+        problems.push(
+          `${id}: requires содержит ${concept}, но concept не входит в assumedConcepts и не был введён раньше`
+        );
+      }
+    }
+    for (const concept of introduces) {
+      if (available.has(concept)) {
+        problems.push(`${id}: concept ${concept} уже был доступен до introduces`);
+      }
+    }
+    for (const concept of defers) {
+      const introductionIndex = firstIntroductionIndex.get(concept);
+      if (introductionIndex === undefined) {
+        problems.push(`${id}: defers содержит ${concept}, но concept не вводится в курсе`);
+      } else if (introductionIndex <= sessionIndex) {
+        problems.push(
+          `${id}: defers содержит ${concept}, но concept вводится не позже этой сессии`
+        );
+      }
+    }
+    for (const concept of introduces) {
+      available.add(concept);
+    }
+  }
+}
+
+function collectRawSessions(manifest: Record<string, unknown>): Record<string, unknown>[] {
+  const result: Record<string, unknown>[] = [];
+  if (Array.isArray(manifest.modules)) {
+    for (const module of manifest.modules) {
+      if (!isRecord(module) || !Array.isArray(module.sessions)) {
+        continue;
+      }
+      result.push(...module.sessions.filter(isRecord));
+    }
+  }
+  if (isRecord(manifest.capstone) && Array.isArray(manifest.capstone.sessions)) {
+    result.push(...manifest.capstone.sessions.filter(isRecord));
+  }
+  return result;
+}
+
+function validateConceptArray(
+  session: Record<string, unknown>,
+  id: string,
+  field: "requires" | "introduces" | "defers",
+  problems: string[]
+): void {
+  const concepts = readConceptArray(session[field]);
+  if (!concepts) {
+    problems.push(`${id}: ${field} должен быть массивом непустых concept ids`);
+    return;
+  }
+  if (new Set(concepts).size !== concepts.length) {
+    problems.push(`${id}: ${field} содержит повторяющиеся concept ids`);
+  }
+}
+
+function readConceptArray(value: unknown): string[] | null {
+  if (
+    !Array.isArray(value) ||
+    !value.every((concept) => typeof concept === "string" && concept.trim().length > 0)
+  ) {
+    return null;
+  }
+  return value;
 }
 
 export function flattenManifest(manifest: CourseManifest): FlatSession[] {

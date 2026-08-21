@@ -3,5 +3,6 @@ node_modules/
 dist/
 coverage/
 .training/
+.authoring/
 *.log
 .DS_Store

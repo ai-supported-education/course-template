@@ -2,6 +2,7 @@
   "version": 1,
   "language": "ru",
   "audience": "{{ опишите входные знания учащегося }}",
+  "assumedConcepts": [],
   "estimatedHours": {
     "min": 1,
     "max": 1
@@ -28,7 +29,10 @@
           "kind": "observe",
           "outcome": "Учащийся получает первую реальную завершённую карточку.",
           "done": "Демонстрационный module заменён автором до публикации курса.",
-          "checks": ["review"]
+          "checks": ["review"],
+          "requires": [],
+          "introduces": ["first-real-session"],
+          "defers": []
         }
       ]
     }

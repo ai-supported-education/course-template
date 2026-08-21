@@ -17,6 +17,7 @@
     "session:hint": "node --import tsx packages/session-runner/src/cli.ts hint",
     "session:dev": "node --import tsx packages/session-runner/src/cli.ts dev",
     "course:sync": "node --import tsx packages/session-runner/src/course-sync-cli.ts",
+    "author:content-review": "node --import tsx packages/session-runner/src/content-review-cli.ts",
     "typecheck": "pnpm --filter @training/session-runner typecheck",
     "test": "pnpm --filter @training/session-runner test"
   },

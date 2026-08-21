@@ -16,6 +16,16 @@ Runner читает `curriculum/course.json`, разрешает одну акт
 - `session:hint` — выдать следующий уровень помощи из `course-support`;
 - `course:sync` — обновить чистую personal progress-ветку из upstream.
 
+Author-side команды не используют learner progress:
+
+- `author:content-review session <id>` — собрать blind/consistency packets;
+- `author:content-review module <id>` — собрать module packet;
+- `author:content-review --record <scope> <id> PASS|NEEDS_REWRITE --report <path>` — записать verdict с content hash;
+- `author:content-review status <scope> <id>` — проверить актуальность PASS.
+
+CLI не запускает агента. Fresh subagent создаёт родительский Codex по правилам
+`AGENTS.md`; локальные packets и records находятся в игнорируемой `.authoring/`.
+
 ## Добавление нового check
 
 Check label появляется только после трёх доказательств: он зарегистрирован в

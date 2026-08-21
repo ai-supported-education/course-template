@@ -20,6 +20,14 @@ review по этому стандарту.
 Теория должна занимать примерно 10–15 минут внимательного чтения. Более длинную
 тему делите на несколько сессий.
 
+## Карта понятий
+
+У каждой сессии в `course.json` обязательны `requires`, `introduces` и `defers`:
+что учащийся уже должен знать, что полноценно вводится сейчас и что только названо,
+но намеренно объясняется позже. Concept ids должны быть устойчивыми и
+машиночитаемыми. Manifest validation отклоняет неизвестные prerequisites,
+повторные introductions и deferred concepts без будущего introduction.
+
 ## Практика
 
 - Starter содержит одну целевую проблему.
@@ -61,3 +69,16 @@ repository.
 
 Сессия с `review` не завершается без актуального `PASS`, записанного после
 последнего автоматического check.
+
+## Независимый content-review автора
+
+Каждая новая или существенно изменённая карточка проходит review отдельным
+subagent без истории генерации. Он сначала читает только learner-facing packet,
+затем сверяет его с concept graph, rubric, tests и соседними карточками. Reviewer
+работает read-only и не открывает `course-support`.
+
+`PASS` допустим только без BLOCKER и MAJOR findings. После исправления материала
+старый hash устаревает, а повторный review выполняет новый fresh subagent. После
+session-level PASS всех карточек требуется отдельный module-level PASS.
+
+Полный протокол: [content-review-protocol.md](content-review-protocol.md).

@@ -39,3 +39,18 @@ Scope активной сессии задают её `README.md`, `DONE` и `ru
 
 Соблюдайте `curriculum/authoring-standard.md`. Стековые архитектурные правила не
 переносятся между курсами автоматически: подключайте только профиль нужного стека.
+
+После генерации или существенного изменения learner-facing материала выполните
+обязательный independent content-review:
+
+1. Соберите packet через `pnpm author:content-review session <id>`.
+2. Запустите отдельного subagent с `fork_turns="none"`, не передавая историю
+   генерации, авторские рассуждения, hints или solution. Quiz key может находиться
+   только во второй фазе packet как acceptance evidence.
+3. Reviewer сначала фиксирует blind learner-pass по `01-blind.md`, затем открывает
+   `02-consistency.md` и проверяет rubric, tests и соседние карточки.
+4. Reviewer не меняет файлы и возвращает `PASS` или `NEEDS_REWRITE`.
+5. После исправлений повторите review новым fresh subagent.
+
+После session PASS всех карточек выполните `pnpm author:content-review module <id>`.
+Без актуальных session и module PASS материал не считается готовым к публикации.

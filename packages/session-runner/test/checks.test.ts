@@ -25,7 +25,10 @@ const session: FlatSession = {
     kind: "observe",
     outcome: "Outcome",
     done: "Done",
-    checks: ["quiz", "review"]
+    checks: ["quiz", "review"],
+    requires: [],
+    introduces: ["quiz-reasoning"],
+    defers: []
   }
 };
 

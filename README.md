@@ -44,6 +44,19 @@ GitHub переносит из template только default branch, поэто�
 
 Полная схема файлов — в [repository-layout.md](docs/repository-layout.md).
 
+## Independent content-review
+
+После создания или существенного изменения карточки соберите author packet:
+
+    pnpm author:content-review session 01-01
+    pnpm author:content-review module 01
+
+Родительский Codex запускает нового subagent без истории генерации. Reviewer
+сначала читает blind learner packet, затем проверяет связность с rubric, tests и
+соседними карточками. CLI сам агента не запускает; verdict и content hash хранятся
+локально в `.authoring/`. Подробнее — в
+[content-review protocol](curriculum/content-review-protocol.md).
+
 ## Стековые правила
 
 Базовый шаблон намеренно не привязан к фронтенду, FSD или React. Сравнение с

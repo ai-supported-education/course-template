@@ -93,7 +93,10 @@ function createDefinition(
     kind: "build",
     outcome: "Outcome",
     done: "Done",
-    checks
+    checks,
+    requires: [],
+    introduces: [`concept-${id}`],
+    defers: []
   };
 }
 
