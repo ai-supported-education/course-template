@@ -66,6 +66,17 @@ Main branch не должна содержать ключи quiz, готовые
 подсказок. Создайте ref `course-support` от основной ветки и храните эти файлы
 только там.
 
+GitHub не переносит дополнительные Git refs при создании repository из template.
+Поэтому сразу после создания нового курса выполните:
+
+    git switch -c course-support
+    git push -u origin course-support
+    git switch -
+
+Затем добавляйте support-файлы, переключившись в эту ветку. Перед проверкой hint в
+обычном clone достаточно выполнить `git fetch origin`; в personal fork —
+`git fetch upstream`.
+
 ## Рабочий цикл автора
 
 1. Замените демонстрационный module и первую карточку реальной темой.

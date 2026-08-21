@@ -88,7 +88,7 @@ async function assertRemote(git: GitExecutor, remote: string): Promise<void> {
   } catch {
     throw new Error(
       remote === upstreamRemote
-        ? "Не настроен remote upstream. Выполните: git remote add upstream https://github.com/ai-supported-education/vue2react.git"
+        ? "Не настроен remote upstream. Добавьте официальный repository курса: git remote add upstream <URL-официального-курса>."
         : "Не настроен remote origin. Создайте personal fork и добавьте его как origin."
     );
   }
