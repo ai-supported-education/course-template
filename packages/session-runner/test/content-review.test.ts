@@ -122,11 +122,13 @@ describe("author content review", () => {
     expect(consistency).toContain("Learner material для planned session ещё не опубликован");
   });
 
-  it("does not attest a whole module while that module has planned sessions", async () => {
+  it("reviews the current published module prefix and shows its planned tail", async () => {
     const root = await createWorkspace();
-    await expect(prepareContentReview(root, "module", "01")).rejects.toThrow(
-      "содержит planned sessions"
-    );
+    const prepared = await prepareContentReview(root, "module", "01");
+    const blind = await readFile(prepared.blindPacketPath, "utf8");
+    expect(blind).toContain("Current explanation");
+    expect(blind).toContain("01-04: Future contract");
+    expect(blind).toContain("releaseStatus=planned");
   });
 
   it("rejects an unstructured or mismatched report", async () => {

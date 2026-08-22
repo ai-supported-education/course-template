@@ -86,5 +86,5 @@ module PASS материал не считается готовым к публ�
 `planned` содержит только roadmap и не проходит content-review. Полный контракт
 сначала переводится в `published` в authoring feature branch, где появляются
 learner files и выполняется review; default branch получает его только вместе с
-актуальными attestations. Module review не запускается, пока внутри этого module
-остаются planned-сессии.
+актуальными attestations. Module review покрывает текущий published prefix; после
+публикации следующей карточки он повторяется для расширенного prefix.

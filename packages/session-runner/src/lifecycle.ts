@@ -3,7 +3,11 @@ import { constants } from "node:fs";
 import path from "node:path";
 import { hashDirectory } from "./content-hash.js";
 import { getSession } from "./manifest.js";
-import { loadProgress, saveCheckpoint, saveProgress } from "./progress.js";
+import {
+  loadProgressForSessions,
+  saveCheckpoint,
+  saveProgress
+} from "./progress.js";
 import type {
   CheckRun,
   FlatSession,
@@ -17,7 +21,12 @@ export function getNextSession(
   progress: ProgressState
 ): FlatSession | null {
   if (progress.activeSessionId) {
-    return getSession(sessions, progress.activeSessionId);
+    const active = sessions.find(
+      (session) => session.definition.id === progress.activeSessionId
+    );
+    if (active) {
+      return active;
+    }
   }
 
   const completed = new Set(progress.completedSessionIds);
@@ -31,7 +40,7 @@ export async function startSession(
   now = new Date()
 ): Promise<{ session: FlatSession; progress: ProgressState }> {
   const session = getSession(sessions, id);
-  const progress = await loadProgress(root);
+  const progress = await loadProgressForSessions(root, sessions);
 
   if (progress.completedSessionIds.includes(id)) {
     throw new Error(`Сессия ${id} уже завершена.`);
@@ -72,9 +81,10 @@ export async function startSession(
 
 export async function recordCheck(
   root: string,
+  sessions: FlatSession[],
   run: CheckRun
 ): Promise<ProgressState> {
-  const progress = await loadProgress(root);
+  const progress = await loadProgressForSessions(root, sessions);
   if (progress.activeSessionId !== run.sessionId) {
     throw new Error(`Check относится не к активной сессии ${progress.activeSessionId ?? "none"}.`);
   }
@@ -95,7 +105,7 @@ export async function recordReview(
   verdict: ReviewVerdict,
   now = new Date()
 ): Promise<ProgressState> {
-  const progress = await loadProgress(root);
+  const progress = await loadProgressForSessions(root, sessions);
   if (!progress.activeSessionId) {
     throw new Error("Нет активной сессии.");
   }
@@ -127,7 +137,7 @@ export async function finishSession(
   sessions: FlatSession[],
   now = new Date()
 ): Promise<{ finished: FlatSession; next: FlatSession | null; progress: ProgressState }> {
-  const progress = await loadProgress(root);
+  const progress = await loadProgressForSessions(root, sessions);
   if (!progress.activeSessionId) {
     throw new Error("Нет активной сессии.");
   }

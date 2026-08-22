@@ -68,10 +68,12 @@ export async function loadCourseContextDocuments(
       if (fileStat.size > maxContextBytes) {
         throw new Error(`файл больше ${maxContextBytes} bytes`);
       }
-      documents.push({
-        path: relativePath,
-        source: await readFile(absolutePath, "utf8")
-      });
+      const bytes = await readFile(absolutePath);
+      const source = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+      if (source.includes("\0")) {
+        throw new Error("файл содержит NUL и не считается текстовым");
+      }
+      documents.push({ path: relativePath, source });
     } catch (error) {
       throw new Error(
         `Не удалось прочитать course context ${relativePath}: ${formatError(error)}`
@@ -99,26 +101,34 @@ function isSafeCourseContextPath(value: string): boolean {
 }
 
 function isSensitivePathSegment(value: string): boolean {
-  const normalized = value.toLowerCase().replace(/\.[a-z0-9]+$/i, "");
-  return new Set([
+  const sensitiveTokens = new Set([
     "answer",
     "answers",
-    "answer-key",
     "credential",
     "credentials",
-    "course-support",
+    "dotenv",
+    "env",
     "hint",
     "hints",
     "key",
     "keys",
+    "p12",
+    "password",
+    "passwords",
+    "pem",
+    "pfx",
     "review",
     "reviews",
     "secret",
     "secrets",
     "solution",
     "solutions",
-    "support"
-  ]).has(normalized);
+    "support",
+    "token",
+    "tokens"
+  ]);
+  const tokens = value.toLowerCase().split(/[-_.]+/).filter(Boolean);
+  return tokens.some((token) => sensitiveTokens.has(token));
 }
 
 async function assertNoSymlinkComponents(

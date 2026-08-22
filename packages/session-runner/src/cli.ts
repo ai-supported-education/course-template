@@ -19,7 +19,7 @@ import {
   getSession,
   loadManifest
 } from "./manifest.js";
-import { loadProgress } from "./progress.js";
+import { loadProgressForSessions } from "./progress.js";
 import {
   assertRoadmapSessionIsPublished,
   publishedCompletionLines
@@ -66,7 +66,7 @@ async function main(): Promise<void> {
     }
 
     case "next": {
-      const progress = await loadProgress(root);
+      const progress = await loadProgressForSessions(root, sessions);
       const session = getNextSession(sessions, progress);
       if (!session) {
         printPublishedCompletion(roadmap);
@@ -93,13 +93,13 @@ async function main(): Promise<void> {
     }
 
     case "check": {
-      const progress = await loadProgress(root);
+      const progress = await loadProgressForSessions(root, sessions);
       if (!progress.activeSessionId) {
         throw new Error("Нет активной сессии. Сначала выполните session:start.");
       }
       const session = getSession(sessions, progress.activeSessionId);
       const run = await runSessionChecks(root, session);
-      await recordCheck(root, run);
+      await recordCheck(root, sessions, run);
       printCheckRun(run);
       if (!run.passed) {
         process.exitCode = 1;
@@ -108,7 +108,7 @@ async function main(): Promise<void> {
     }
 
     case "review": {
-      const progress = await loadProgress(root);
+      const progress = await loadProgressForSessions(root, sessions);
       if (!progress.activeSessionId) {
         throw new Error("Нет активной сессии.");
       }
@@ -164,7 +164,7 @@ async function main(): Promise<void> {
     }
 
     case "dev": {
-      const progress = await loadProgress(root);
+      const progress = await loadProgressForSessions(root, sessions);
       if (!progress.activeSessionId) {
         throw new Error("Нет активной сессии.");
       }

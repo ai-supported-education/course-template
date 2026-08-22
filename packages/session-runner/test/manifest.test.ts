@@ -1,5 +1,5 @@
 import { fileURLToPath } from "node:url";
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
@@ -7,8 +7,10 @@ import {
   flattenManifest,
   flattenRoadmap,
   loadManifest,
+  validatePublishedMaterials,
   validateManifest
 } from "../src/manifest.js";
+import type { FlatSession } from "../src/types.js";
 
 const workspaceRoot = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -172,7 +174,7 @@ describe("course manifest", () => {
             ]
           }
         ],
-        capstone: { sessions: [] }
+        capstone: { id: "capstone", title: "Capstone", goal: "Apply", sessions: [] }
       }, null, 2)}\n`
     );
     await mkdir(path.join(root, "modules/01-sample/sessions/01-01"), {
@@ -183,7 +185,121 @@ describe("course manifest", () => {
       "# Published\n"
     );
 
-    await expect(loadManifest(root)).rejects.toThrow("отсутствует читаемый");
+    await expect(loadManifest(root)).rejects.toThrow(
+      "некорректный published material"
+    );
+  });
+
+  it("requires regular check-specific published files", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "published-material-"));
+    const directory = path.join(root, "modules/01-sample/sessions/01-01");
+    await mkdir(path.join(directory, "README.md"), { recursive: true });
+    const outside = path.join(root, "outside.md");
+    await writeFile(outside, "# Rubric outside session\n");
+    await symlink(outside, path.join(directory, "rubric.md"));
+
+    const module = {
+      id: "01",
+      slug: "sample",
+      title: "Sample",
+      goal: "Sample",
+      sessions: []
+    };
+    const session: FlatSession = {
+      index: 0,
+      module,
+      isCapstone: false,
+      definition: {
+        id: "01-01",
+        title: "Quiz",
+        minutes: 30,
+        kind: "observe",
+        outcome: "Outcome",
+        done: "Done",
+        checks: ["quiz", "review"],
+        evidence: {
+          produces: ["answers.json"],
+          verifiedBy: ["automated", "agent"]
+        },
+        requires: [],
+        introduces: ["one"],
+        defers: []
+      }
+    };
+
+    const problems = await validatePublishedMaterials(root, [session]);
+    expect(problems).toHaveLength(5);
+    expect(problems).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining("README.md"),
+        expect.stringContaining("rubric.md"),
+        expect.stringContaining("quiz.md"),
+        expect.stringContaining("quiz.json"),
+        expect.stringContaining("answers.json")
+      ])
+    );
+  });
+
+  it.skipIf(process.platform === "win32")(
+    "rejects a published material that cannot be read",
+    async () => {
+      const root = await mkdtemp(path.join(os.tmpdir(), "published-material-"));
+      const directory = path.join(root, "modules/01-sample/sessions/01-01");
+      await mkdir(directory, { recursive: true });
+      const readme = path.join(directory, "README.md");
+      await writeFile(readme, "# Published\n");
+      await writeFile(path.join(directory, "rubric.md"), "# Rubric\n");
+      await chmod(readme, 0o000);
+
+      const module = {
+        id: "01",
+        slug: "sample",
+        title: "Sample",
+        goal: "Sample",
+        sessions: []
+      };
+      const session: FlatSession = {
+        index: 0,
+        module,
+        isCapstone: false,
+        definition: {
+          id: "01-01",
+          title: "Read",
+          minutes: 30,
+          kind: "observe",
+          outcome: "Outcome",
+          done: "Done",
+          checks: ["review"],
+          evidence: { produces: ["artifact"], verifiedBy: ["agent"] },
+          requires: [],
+          introduces: ["one"],
+          defers: []
+        }
+      };
+
+      await expect(validatePublishedMaterials(root, [session])).resolves.toEqual([
+        expect.stringContaining("README.md")
+      ]);
+      await chmod(readme, 0o600);
+    }
+  );
+
+  it("rejects an unsafe or colliding capstone id", () => {
+    const base = {
+      profiles: [],
+      assumedConcepts: [],
+      sessionPolicy: { minMinutes: 30, maxMinutes: 60 },
+      modules: [{ id: "01", slug: "sample", sessions: [] }]
+    };
+
+    expect(
+      validateManifest({ ...base, capstone: { id: "x/../../escape", sessions: [] } })
+    ).toContain(
+      "capstone.id должен быть portable id из lowercase букв, цифр и дефисов"
+    );
+    expect(
+      validateManifest({ ...base, capstone: { id: "01", sessions: [] } })
+    ).toContain("capstone.id 01 совпадает с module id");
   });
 
   it("rejects a published gap and published-only fields on planned sessions", () => {

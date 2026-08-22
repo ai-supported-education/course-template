@@ -10,7 +10,11 @@ import {
   recordReview,
   startSession
 } from "../src/lifecycle.js";
-import { loadProgress } from "../src/progress.js";
+import {
+  createEmptyProgress,
+  loadProgress,
+  saveProgress
+} from "../src/progress.js";
 import type {
   CheckRun,
   CourseModule,
@@ -56,12 +60,12 @@ describe("session lifecycle", () => {
     await expect(startSession(root, sessions, "01-02")).rejects.toThrow("активную");
     await expect(finishSession(root, sessions)).rejects.toThrow("session:check");
 
-    await recordCheck(root, await createPassingRun(root, sessions[0]!));
+    await recordCheck(root, sessions, await createPassingRun(root, sessions[0]!));
     const firstFinish = await finishSession(root, sessions);
     expect(firstFinish.next?.definition.id).toBe("01-02");
 
     await startSession(root, sessions, "01-02");
-    await recordCheck(root, await createPassingRun(root, sessions[1]!));
+    await recordCheck(root, sessions, await createPassingRun(root, sessions[1]!));
     await expect(finishSession(root, sessions)).rejects.toThrow("session:review");
 
     await recordReview(root, sessions, "PASS");
@@ -73,12 +77,33 @@ describe("session lifecycle", () => {
   it("invalidates a check after session files change", async () => {
     const root = await createWorkspace();
     await startSession(root, sessions, "01-01");
-    await recordCheck(root, await createPassingRun(root, sessions[0]!));
+    await recordCheck(root, sessions, await createPassingRun(root, sessions[0]!));
 
     const directory = getSessionDirectory(root, sessions[0]!);
     await writeFile(path.join(directory, "answer.ts"), "export const answer = 2;\n");
 
     await expect(finishSession(root, sessions)).rejects.toThrow("изменились");
+  });
+
+  it("recovers when a branch makes the active session unpublished", async () => {
+    const root = await createWorkspace();
+    const staleProgress = {
+      ...createEmptyProgress(),
+      activeSessionId: "01-99",
+      startedAt: "2026-08-18T00:00:00.000Z",
+      revealedHintLevel: 2
+    };
+    await saveProgress(root, staleProgress);
+
+    expect(getNextSession(sessions, staleProgress)?.definition.id).toBe("01-01");
+    const result = await startSession(root, sessions, "01-01");
+
+    expect(result.progress).toMatchObject({
+      activeSessionId: "01-01",
+      lastCheck: null,
+      lastReview: null,
+      revealedHintLevel: 0
+    });
   });
 });
 

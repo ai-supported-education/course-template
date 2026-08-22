@@ -54,6 +54,22 @@ describe("course context files", () => {
     );
   });
 
+  it("rejects sensitive filename variants without blocking words that merely contain key", () => {
+    const problems = validateCourseContextPaths([
+      "docs/secrets-prod.md",
+      "docs/credentials-backup.md",
+      "docs/answers.v1.md",
+      "docs/.env.md",
+      "docs/private.pem.md",
+      "docs/keyboard-navigation.md",
+      "docs/monkey.md"
+    ]);
+
+    expect(problems).toHaveLength(5);
+    expect(problems.some((problem) => problem.includes("keyboard-navigation"))).toBe(false);
+    expect(problems.some((problem) => problem.includes("monkey"))).toBe(false);
+  });
+
   it("rejects a symlink even when its declared path looks safe", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "course-context-"));
     await mkdir(path.join(root, "docs"), { recursive: true });
@@ -70,6 +86,19 @@ describe("course context files", () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "course-context-"));
     await expect(
       loadCourseContextDocuments(root, ["curriculum/audience.md"])
+    ).rejects.toThrow("Не удалось прочитать course context");
+  });
+
+  it("rejects binary content disguised with a text extension", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "course-context-"));
+    await mkdir(path.join(root, "docs"), { recursive: true });
+    await writeFile(
+      path.join(root, "docs/audience.md"),
+      Buffer.from([0x23, 0x20, 0x41, 0x00, 0xff])
+    );
+
+    await expect(
+      loadCourseContextDocuments(root, ["docs/audience.md"])
     ).rejects.toThrow("Не удалось прочитать course context");
   });
 });

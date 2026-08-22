@@ -1,7 +1,7 @@
 import { constants } from "node:fs";
 import { access, copyFile, mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
-import type { Checkpoint, ProgressState } from "./types.js";
+import type { Checkpoint, FlatSession, ProgressState } from "./types.js";
 
 export function createEmptyProgress(): ProgressState {
   return {
@@ -60,6 +60,30 @@ export async function loadProgress(root: string): Promise<ProgressState> {
   }
 
   return value;
+}
+
+export async function loadProgressForSessions(
+  root: string,
+  sessions: FlatSession[]
+): Promise<ProgressState> {
+  const progress = await loadProgress(root);
+  if (
+    !progress.activeSessionId ||
+    sessions.some((session) => session.definition.id === progress.activeSessionId)
+  ) {
+    return progress;
+  }
+
+  const reconciled: ProgressState = {
+    ...progress,
+    activeSessionId: null,
+    startedAt: null,
+    lastCheck: null,
+    lastReview: null,
+    revealedHintLevel: 0
+  };
+  await saveProgress(root, reconciled);
+  return reconciled;
 }
 
 export async function saveProgress(root: string, state: ProgressState): Promise<void> {

@@ -1,5 +1,5 @@
 import { getSession } from "./manifest.js";
-import { loadProgress, saveProgress } from "./progress.js";
+import { loadProgressForSessions, saveProgress } from "./progress.js";
 import { readSupportFile, type SupportLoader } from "./support.js";
 import type { FlatSession, ProgressState } from "./types.js";
 
@@ -17,7 +17,7 @@ export async function revealNextHint(
   sessions: FlatSession[],
   loader: SupportLoader = readSupportFile
 ): Promise<{ level: number; hint: HintLevel; progress: ProgressState }> {
-  const progress = await loadProgress(root);
+  const progress = await loadProgressForSessions(root, sessions);
   if (!progress.activeSessionId) {
     throw new Error("Нет активной сессии.");
   }

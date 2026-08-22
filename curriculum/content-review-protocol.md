@@ -19,8 +19,9 @@
 
 Planned-сессия является только roadmap и не имеет reviewable learner material.
 Перед review автор переводит готовую карточку в `published` внутри feature branch.
-Review целого module разрешён, только если внутри него больше нет planned-сессий;
-planned roadmap следующих modules остаётся допустимым.
+Module review покрывает текущий published prefix; planned tail показывается как
+контракт следующего шага без несуществующих learner files. Расширение prefix меняет
+hash и требует нового module PASS.
 
 Команда создаёт игнорируемую папку `.authoring/content-review/packets/...`:
 

@@ -1,5 +1,4 @@
-import { constants } from "node:fs";
-import { access, readFile } from "node:fs/promises";
+import { lstat, readFile, realpath } from "node:fs/promises";
 import path from "node:path";
 import {
   CHECK_LABELS,
@@ -70,19 +69,53 @@ export async function validatePublishedMaterials(
   sessions: FlatSession[]
 ): Promise<string[]> {
   const problems: string[] = [];
+  const canonicalRoot = await realpath(root);
   for (const session of sessions) {
     const directory = getSessionDirectory(root, session);
-    for (const file of ["README.md", "rubric.md"]) {
+    for (const file of requiredPublishedFiles(session.definition)) {
+      const target = path.join(directory, file);
       try {
-        await access(path.join(directory, file), constants.R_OK);
-      } catch {
+        const fileStat = await lstat(target);
+        if (fileStat.isSymbolicLink() || !fileStat.isFile() || fileStat.size === 0) {
+          throw new Error("нужен непустой regular file без symlink");
+        }
+        const canonicalTarget = await realpath(target);
+        const relativeTarget = path.relative(canonicalRoot, canonicalTarget);
+        if (
+          relativeTarget === ".." ||
+          relativeTarget.startsWith(`..${path.sep}`) ||
+          path.isAbsolute(relativeTarget)
+        ) {
+          throw new Error("canonical path выходит за пределы workspace");
+        }
+        const contents = await readFile(target);
+        if (file === "quiz.json" || file === "answers.json") {
+          JSON.parse(contents.toString("utf8"));
+        }
+      } catch (error) {
         problems.push(
-          `${session.definition.id}: отсутствует читаемый ${path.relative(root, path.join(directory, file))}`
+          `${session.definition.id}: некорректный published material ${path.relative(root, target)} (${formatError(error)})`
         );
       }
     }
   }
   return problems;
+}
+
+function requiredPublishedFiles(session: SessionDefinition): string[] {
+  const files = new Set(["README.md", "rubric.md"]);
+  if (session.checks.includes("quiz")) {
+    files.add("quiz.md");
+    files.add("quiz.json");
+    files.add("answers.json");
+  }
+  if (session.checks.includes("typecheck")) {
+    files.add("tsconfig.json");
+  }
+  if (session.checks.includes("unit") || session.checks.includes("integration")) {
+    files.add("exercise.test.tsx");
+  }
+  return [...files];
 }
 
 export function validateManifest(value: unknown): string[] {
@@ -131,16 +164,20 @@ export function validateManifest(value: unknown): string[] {
     }
 
     const moduleId = rawModule.id;
-    if (typeof moduleId !== "string" || moduleId.length === 0) {
-      problems.push(`modules[${moduleIndex}].id должен быть непустой строкой`);
+    if (typeof moduleId !== "string" || !isPortableId(moduleId)) {
+      problems.push(
+        `modules[${moduleIndex}].id должен быть portable id из lowercase букв, цифр и дефисов`
+      );
     } else if (moduleIds.has(moduleId)) {
       problems.push(`дублирующийся module id ${moduleId}`);
     } else {
       moduleIds.add(moduleId);
     }
 
-    if (typeof rawModule.slug !== "string" || rawModule.slug.length === 0) {
-      problems.push(`module ${String(moduleId)} не содержит slug`);
+    if (typeof rawModule.slug !== "string" || !isPortableId(rawModule.slug)) {
+      problems.push(
+        `module ${String(moduleId)}.slug должен быть portable id из lowercase букв, цифр и дефисов`
+      );
     }
     if (!Array.isArray(rawModule.sessions) || rawModule.sessions.length === 0) {
       problems.push(`module ${String(moduleId)} не содержит sessions`);
@@ -159,6 +196,14 @@ export function validateManifest(value: unknown): string[] {
   }
 
   const capstone = value.capstone as Record<string, unknown>;
+  const capstoneId = capstone.id;
+  if (typeof capstoneId !== "string" || !isPortableId(capstoneId)) {
+    problems.push(
+      "capstone.id должен быть portable id из lowercase букв, цифр и дефисов"
+    );
+  } else if (moduleIds.has(capstoneId)) {
+    problems.push(`capstone.id ${capstoneId} совпадает с module id`);
+  }
   if (Array.isArray(capstone.sessions)) {
     validateSessions(
       capstone.sessions,
@@ -194,8 +239,10 @@ function validateSessions(
 
     const session = rawSession as Partial<CourseSessionDefinition>;
     const id = session.id;
-    if (typeof id !== "string" || id.length === 0) {
-      problems.push(`${location}.sessions[${index}].id должен быть непустой строкой`);
+    if (typeof id !== "string" || !isPortableId(id)) {
+      problems.push(
+        `${location}.sessions[${index}].id должен быть portable id из lowercase букв, цифр и дефисов`
+      );
       continue;
     }
     if (ids.has(id)) {
@@ -598,6 +645,10 @@ export function getSession(sessions: FlatSession[], id: string): FlatSession {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isPortableId(value: string): boolean {
+  return /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(value);
 }
 
 function formatError(error: unknown): string {

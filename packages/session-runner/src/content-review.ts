@@ -340,11 +340,6 @@ async function resolveTarget(
   }
 
   if (id === manifest.capstone.id) {
-    if (manifest.capstone.sessions.some((session) => session.releaseStatus === "planned")) {
-      throw new Error(
-        `Capstone ${id} нельзя review целиком, пока он содержит planned sessions.`
-      );
-    }
     const targetSessions = sessions.filter((session) => session.isCapstone);
     if (targetSessions.length === 0) {
       throw new Error(`Capstone ${id} не содержит sessions.`);
@@ -364,11 +359,6 @@ async function resolveTarget(
   const module = manifest.modules.find((candidate) => candidate.id === id);
   if (!module) {
     throw new Error(`Неизвестный module: ${id}`);
-  }
-  if (module.sessions.some((session) => session.releaseStatus === "planned")) {
-    throw new Error(
-      `Module ${id} нельзя review целиком, пока он содержит planned sessions.`
-    );
   }
   const targetSessions = sessions.filter((session) => session.module?.id === id);
   return makeModuleTarget(
@@ -396,7 +386,7 @@ function makeModuleTarget(
   const first = targetSessions[0];
   const last = targetSessions.at(-1);
   if (!first || !last) {
-    throw new Error(`Module ${id} не содержит sessions.`);
+    throw new Error(`Module ${id} не содержит published sessions.`);
   }
   return {
     scope,

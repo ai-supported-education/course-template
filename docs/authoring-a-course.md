@@ -38,8 +38,9 @@ README, название/описание repository и другие template pl
 Третьего manifest-статуса для черновика нет. Full-contract карточку готовьте в
 authoring feature branch: там переведите её в `published`, добавьте материалы и
 пройдите checks/content-review. В default branch сессия попадёт только вместе с
-актуальными PASS attestations. Review всего module запрещён, пока внутри самого
-module остаются planned-сессии; planned-сессии следующих modules этому не мешают.
+актуальными PASS attestations. Module review всегда покрывает текущий published
+prefix этого module. Когда следующая карточка становится published, прежний hash
+устаревает и весь расширенный prefix проходит module review заново.
 
 Не превращайте вводный module в двухчасовой «базовый блок». Две новые идеи, два
 независимых результата или отдельный setup tail означают две карточки.
