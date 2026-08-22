@@ -7,6 +7,11 @@
 результаты по 30–60 минут. Module может занимать часы, но каждая карточка должна
 заканчиваться завершённым evidence и безопасным checkpoint.
 
+Если краткой строки `audience` недостаточно, создайте канонический документ,
+например `curriculum/audience.md`, и добавьте его в `courseContextFiles`. Эти
+безопасные текстовые файлы входят в review packets и content hash, поэтому fresh
+reviewer получает ту же модель аудитории, что и автор.
+
 После `Use this template` замените не только placeholder module, но и корневой
 README, название/описание repository и другие template placeholders. Для
 намеренно короткого курса допустим пустой `capstone.sessions`, если последний
@@ -22,6 +27,19 @@ README, название/описание repository и другие template pl
 - `evidence.produces` — какие артефакты останутся;
 - `evidence.verifiedBy` — `automated`, `empirical`, `agent` и/или
   `manual-approval`.
+
+Полный маршрут можно зафиксировать до реализации. Для будущей карточки укажите
+`releaseStatus: "planned"` и только roadmap-поля: `id`, `title`, `minutes`,
+`kind`, `outcome`, `requires`, `introduces`, `defers`. Поля `done`, `checks`,
+`evidence` и `contentReview` появляются при переводе в `published`. Опубликованные
+карточки образуют непрерывный префикс курса; runner не открывает planned-материал.
+Отсутствующий `releaseStatus` обратно совместимо означает `published`.
+
+Третьего manifest-статуса для черновика нет. Full-contract карточку готовьте в
+authoring feature branch: там переведите её в `published`, добавьте материалы и
+пройдите checks/content-review. В default branch сессия попадёт только вместе с
+актуальными PASS attestations. Review всего module запрещён, пока внутри самого
+module остаются planned-сессии; planned-сессии следующих modules этому не мешают.
 
 Не превращайте вводный module в двухчасовой «базовый блок». Две новые идеи, два
 независимых результата или отдельный setup tail означают две карточки.

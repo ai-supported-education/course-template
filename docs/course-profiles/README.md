@@ -13,7 +13,7 @@ content-review.
 | Vue → React | `transition`, `software`, `react` |
 | Node.js → Java | `transition`, `software` и отдельный `java`, если нужны правила стека |
 | Алгоритмы | `software`, `quantitative` |
-| Компьютерные сети | `lab`, `quantitative`, `network-safety` |
+| Компьютерные сети | `lab`, `quantitative`, `network-safety`, `networking` |
 | ESP / SDR | `lab`, `quantitative`, `rf-safety` и при сетевой части `network-safety` |
 | Математика + графический движок | `quantitative`, `software` |
 
@@ -25,6 +25,9 @@ content-review.
 - [lab](lab.md) — воспроизводимая практика с состоянием среды;
 - [network-safety](network-safety.md) — безопасная сетевая область воздействия;
 - [rf-safety](rf-safety.md) — приём, передача и RF-оборудование.
+
+Stack-specific профиль `networking` задаёт правила packet evidence и
+Docker/Linux-лабораторий без привязки к вендору.
 
 Profile не заменяет описание аудитории и prerequisites. Если курсу нужно новое
 правило, создайте узкий документ с новым id; не изменяйте общий стандарт под один

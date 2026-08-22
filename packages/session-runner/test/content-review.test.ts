@@ -29,6 +29,8 @@ describe("author content review", () => {
     expect(blind).not.toContain("custom consistency marker");
     expect(blind).not.toContain("private key marker");
     expect(blind).not.toContain("learner draft");
+    expect(blind).toContain("Canonical test audience");
+    expect(blind).toContain("Module learning arc");
 
     expect(consistency).toContain("Secret rubric");
     expect(consistency).toContain("acceptance marker");
@@ -36,6 +38,8 @@ describe("author content review", () => {
     expect(consistency).toContain("custom consistency marker");
     expect(consistency).not.toContain("private key marker");
     expect(consistency).not.toContain("learner draft");
+    expect(consistency).toContain("Canonical test audience");
+    expect(consistency).toContain("01-04 [planned]: Future contract");
   });
 
   it("records a structured verdict and invalidates it after content changes", async () => {
@@ -79,6 +83,23 @@ describe("author content review", () => {
       "# Software profile\nVerify public behavior.\n"
     );
 
+    const audiencePath = path.join(root, "curriculum/audience.md");
+    await writeFile(audiencePath, "# Changed audience\n");
+    expect((await getContentReviewStatus(root, "session", "01-02")).current).toBe(
+      false
+    );
+    await writeFile(audiencePath, "# Audience\nCanonical test audience.\n");
+
+    const moduleReadme = path.join(root, "modules/01-test/README.md");
+    await writeFile(moduleReadme, "# Changed module arc\n");
+    expect((await getContentReviewStatus(root, "session", "01-02")).current).toBe(
+      false
+    );
+    await writeFile(
+      moduleReadme,
+      "# Module learning arc\nFrom evidence to diagnosis.\n"
+    );
+
     const readme = path.join(
       root,
       "modules/01-test/sessions/01-02/README.md"
@@ -87,6 +108,25 @@ describe("author content review", () => {
     const stale = await getContentReviewStatus(root, "session", "01-02");
     expect(stale.current).toBe(false);
     expect(stale.record?.contentHash).toBe(record.contentHash);
+  });
+
+  it("shows a planned next contract without claiming the course ended", async () => {
+    const root = await createWorkspace();
+    const prepared = await prepareContentReview(root, "session", "01-03");
+    const blind = await readFile(prepared.blindPacketPath, "utf8");
+    const consistency = await readFile(prepared.consistencyPacketPath, "utf8");
+
+    expect(blind).toContain("01-04: Future contract");
+    expect(blind).toContain("releaseStatus=planned");
+    expect(blind).not.toContain("Это последний шаг курса");
+    expect(consistency).toContain("Learner material для planned session ещё не опубликован");
+  });
+
+  it("does not attest a whole module while that module has planned sessions", async () => {
+    const root = await createWorkspace();
+    await expect(prepareContentReview(root, "module", "01")).rejects.toThrow(
+      "содержит planned sessions"
+    );
   });
 
   it("rejects an unstructured or mismatched report", async () => {
@@ -160,6 +200,7 @@ async function createWorkspace(): Promise<string> {
     language: "en",
     audience: "Test learner",
     profiles: ["software"],
+    courseContextFiles: ["curriculum/audience.md"],
     assumedConcepts: [],
     estimatedHours: { min: 1, max: 2 },
     sessionPolicy: {
@@ -176,7 +217,20 @@ async function createWorkspace(): Promise<string> {
         slug: "test",
         title: "Test module",
         goal: "Test review packets",
-        sessions
+        sessions: [
+          ...sessions,
+          {
+            id: "01-04",
+            releaseStatus: "planned",
+            title: "Future contract",
+            minutes: 30,
+            kind: "diagnose",
+            outcome: "Diagnose a later case",
+            requires: ["next-concept"],
+            introduces: ["future-concept"],
+            defers: []
+          }
+        ]
       }
     ],
     capstone: {
@@ -195,6 +249,15 @@ async function createWorkspace(): Promise<string> {
   await writeFile(
     path.join(root, "curriculum/course.json"),
     `${JSON.stringify(manifest, null, 2)}\n`
+  );
+  await writeFile(
+    path.join(root, "curriculum/audience.md"),
+    "# Audience\nCanonical test audience.\n"
+  );
+  await mkdir(path.join(root, "modules/01-test"), { recursive: true });
+  await writeFile(
+    path.join(root, "modules/01-test/README.md"),
+    "# Module learning arc\nFrom evidence to diagnosis.\n"
   );
 
   for (const session of sessions) {

@@ -82,3 +82,9 @@ acceptance test обязан:
 После актуального PASS запишите публичную аттестацию командой
 `pnpm author:content-review attest <session|module> <id>`. Без актуальных session и
 module PASS материал не считается готовым к публикации.
+
+`planned` содержит только roadmap и не проходит content-review. Полный контракт
+сначала переводится в `published` в authoring feature branch, где появляются
+learner files и выполняется review; default branch получает его только вместе с
+актуальными attestations. Module review не запускается, пока внутри этого module
+остаются planned-сессии.

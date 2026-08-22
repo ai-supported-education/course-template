@@ -1,18 +1,28 @@
-import { readFile } from "node:fs/promises";
+import { constants } from "node:fs";
+import { access, readFile } from "node:fs/promises";
 import path from "node:path";
 import {
   CHECK_LABELS,
+  SESSION_RELEASE_STATUSES,
   SESSION_KINDS,
   VERIFICATION_MODES,
+  type CourseSessionDefinition,
   type CourseManifest,
+  type FlatRoadmapSession,
   type FlatSession,
   type SessionDefinition
 } from "./types.js";
+import {
+  loadCourseContextDocuments,
+  validateCourseContextPaths
+} from "./course-context.js";
 import { loadCourseProfileDocuments } from "./profiles.js";
+import { getSessionDirectory } from "./workspace.js";
 
 const sessionKindSet = new Set<string>(SESSION_KINDS);
 const checkLabelSet = new Set<string>(CHECK_LABELS);
 const verificationModeSet = new Set<string>(VERIFICATION_MODES);
+const releaseStatusSet = new Set<string>(SESSION_RELEASE_STATUSES);
 
 export async function loadManifest(root: string): Promise<CourseManifest> {
   const manifestPath = path.join(root, "curriculum", "course.json");
@@ -36,9 +46,43 @@ export async function loadManifest(root: string): Promise<CourseManifest> {
     throw new Error(`Manifest не прошёл проверку:\n- ${problems.join("\n- ")}`);
   }
 
-  await loadCourseProfileDocuments(root, (value as CourseManifest).profiles);
+  const manifest = value as CourseManifest;
+  await loadCourseProfileDocuments(root, manifest.profiles);
+  await loadCourseContextDocuments(
+    root,
+    manifest.courseContextFiles ?? []
+  );
+  const materialProblems = await validatePublishedMaterials(
+    root,
+    flattenManifest(manifest)
+  );
+  if (materialProblems.length > 0) {
+    throw new Error(
+      `Опубликованные материалы не готовы:\n- ${materialProblems.join("\n- ")}`
+    );
+  }
 
-  return value as CourseManifest;
+  return manifest;
+}
+
+export async function validatePublishedMaterials(
+  root: string,
+  sessions: FlatSession[]
+): Promise<string[]> {
+  const problems: string[] = [];
+  for (const session of sessions) {
+    const directory = getSessionDirectory(root, session);
+    for (const file of ["README.md", "rubric.md"]) {
+      try {
+        await access(path.join(directory, file), constants.R_OK);
+      } catch {
+        problems.push(
+          `${session.definition.id}: отсутствует читаемый ${path.relative(root, path.join(directory, file))}`
+        );
+      }
+    }
+  }
+  return problems;
 }
 
 export function validateManifest(value: unknown): string[] {
@@ -62,6 +106,7 @@ export function validateManifest(value: unknown): string[] {
   if (!Array.isArray(value.profiles)) {
     problems.push("profiles должен быть массивом profile ids");
   }
+  problems.push(...validateCourseContextPaths(value.courseContextFiles));
 
   if (problems.length > 0) {
     return problems;
@@ -76,6 +121,7 @@ export function validateManifest(value: unknown): string[] {
 
   const ids = new Set<string>();
   const moduleIds = new Set<string>();
+  const releaseOrder = { encounteredPlanned: false };
   const modules = value.modules as unknown[];
 
   for (const [moduleIndex, rawModule] of modules.entries()) {
@@ -107,7 +153,8 @@ export function validateManifest(value: unknown): string[] {
       ids,
       typeof minMinutes === "number" ? minMinutes : 30,
       typeof maxMinutes === "number" ? maxMinutes : 60,
-      problems
+      problems,
+      releaseOrder
     );
   }
 
@@ -119,7 +166,8 @@ export function validateManifest(value: unknown): string[] {
       ids,
       typeof minMinutes === "number" ? minMinutes : 30,
       typeof maxMinutes === "number" ? maxMinutes : 60,
-      problems
+      problems,
+      releaseOrder
     );
   }
 
@@ -135,7 +183,8 @@ function validateSessions(
   ids: Set<string>,
   minMinutes: number,
   maxMinutes: number,
-  problems: string[]
+  problems: string[],
+  releaseOrder: { encounteredPlanned: boolean }
 ): void {
   for (const [index, rawSession] of sessions.entries()) {
     if (!isRecord(rawSession)) {
@@ -143,7 +192,7 @@ function validateSessions(
       continue;
     }
 
-    const session = rawSession as Partial<SessionDefinition>;
+    const session = rawSession as Partial<CourseSessionDefinition>;
     const id = session.id;
     if (typeof id !== "string" || id.length === 0) {
       problems.push(`${location}.sessions[${index}].id должен быть непустой строкой`);
@@ -170,24 +219,58 @@ function validateSessions(
     if (typeof session.outcome !== "string" || session.outcome.length === 0) {
       problems.push(`${id}: outcome обязателен`);
     }
-    if (typeof session.done !== "string" || session.done.length === 0) {
-      problems.push(`${id}: done обязателен`);
+    const releaseStatus = rawSession.releaseStatus ?? "published";
+    if (typeof releaseStatus !== "string" || !releaseStatusSet.has(releaseStatus)) {
+      problems.push(`${id}: неизвестный releaseStatus ${String(releaseStatus)}`);
     }
-    if (!Array.isArray(session.checks) || session.checks.length === 0) {
-      problems.push(`${id}: checks должен быть непустым массивом`);
-    } else {
-      for (const label of session.checks) {
-        if (typeof label !== "string" || !checkLabelSet.has(label)) {
-          problems.push(`${id}: неизвестный check ${String(label)}`);
+    if (releaseStatus === "planned") {
+      releaseOrder.encounteredPlanned = true;
+      for (const publishedOnlyField of [
+        "done",
+        "checks",
+        "evidence",
+        "contentReview"
+      ]) {
+        if (rawSession[publishedOnlyField] !== undefined) {
+          problems.push(
+            `${id}: planned session не должна содержать ${publishedOnlyField}`
+          );
         }
       }
+    } else {
+      if (releaseOrder.encounteredPlanned) {
+        problems.push(
+          `${id}: published session не может находиться после planned session`
+        );
+      }
+      validatePublishedSession(rawSession, id, problems);
     }
-    validateEvidence(rawSession, id, problems);
-    validateContentReviewSelection(rawSession, id, problems);
     validateConceptArray(rawSession, id, "requires", problems);
     validateConceptArray(rawSession, id, "introduces", problems);
     validateConceptArray(rawSession, id, "defers", problems);
   }
+}
+
+function validatePublishedSession(
+  rawSession: Record<string, unknown>,
+  id: string,
+  problems: string[]
+): void {
+  const session = rawSession as Partial<SessionDefinition>;
+  if (typeof session.done !== "string" || session.done.length === 0) {
+    problems.push(`${id}: done обязателен`);
+  }
+  if (!Array.isArray(session.checks) || session.checks.length === 0) {
+    problems.push(`${id}: checks должен быть непустым массивом`);
+  } else {
+    for (const label of session.checks) {
+      if (typeof label !== "string" || !checkLabelSet.has(label)) {
+        problems.push(`${id}: неизвестный check ${String(label)}`);
+      }
+    }
+  }
+  validateEvidence(rawSession, id, problems);
+  validateContentReviewSelection(rawSession, id, problems);
 }
 
 function validateProfiles(
@@ -449,6 +532,9 @@ export function flattenManifest(manifest: CourseManifest): FlatSession[] {
 
   for (const module of manifest.modules) {
     for (const definition of module.sessions) {
+      if (!isPublishedSession(definition)) {
+        continue;
+      }
       sessions.push({
         index: sessions.length,
         definition,
@@ -459,6 +545,9 @@ export function flattenManifest(manifest: CourseManifest): FlatSession[] {
   }
 
   for (const definition of manifest.capstone.sessions) {
+    if (!isPublishedSession(definition)) {
+      continue;
+    }
     sessions.push({
       index: sessions.length,
       definition,
@@ -468,6 +557,35 @@ export function flattenManifest(manifest: CourseManifest): FlatSession[] {
   }
 
   return sessions;
+}
+
+export function flattenRoadmap(manifest: CourseManifest): FlatRoadmapSession[] {
+  const sessions: FlatRoadmapSession[] = [];
+  for (const module of manifest.modules) {
+    for (const definition of module.sessions) {
+      sessions.push({
+        index: sessions.length,
+        definition,
+        module,
+        isCapstone: false
+      });
+    }
+  }
+  for (const definition of manifest.capstone.sessions) {
+    sessions.push({
+      index: sessions.length,
+      definition,
+      module: null,
+      isCapstone: true
+    });
+  }
+  return sessions;
+}
+
+export function isPublishedSession(
+  definition: CourseSessionDefinition
+): definition is SessionDefinition {
+  return definition.releaseStatus !== "planned";
 }
 
 export function getSession(sessions: FlatSession[], id: string): FlatSession {

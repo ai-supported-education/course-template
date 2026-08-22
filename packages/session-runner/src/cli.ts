@@ -13,8 +13,17 @@ import {
   recordReview,
   startSession
 } from "./lifecycle.js";
-import { flattenManifest, getSession, loadManifest } from "./manifest.js";
+import {
+  flattenManifest,
+  flattenRoadmap,
+  getSession,
+  loadManifest
+} from "./manifest.js";
 import { loadProgress } from "./progress.js";
+import {
+  assertRoadmapSessionIsPublished,
+  publishedCompletionLines
+} from "./publication.js";
 import { buildReviewPacket } from "./review.js";
 import type { FlatSession, ReviewVerdict } from "./types.js";
 import {
@@ -28,10 +37,15 @@ async function main(): Promise<void> {
   const root = findWorkspaceRoot();
   const manifest = await loadManifest(root);
   const sessions = flattenManifest(manifest);
+  const roadmap = flattenRoadmap(manifest);
 
   switch (command) {
     case "validate": {
-      const minutes = sessions.reduce(
+      const roadmapMinutes = roadmap.reduce(
+        (total, session) => total + session.definition.minutes,
+        0
+      );
+      const publishedMinutes = sessions.reduce(
         (total, session) => total + session.definition.minutes,
         0
       );
@@ -42,9 +56,10 @@ async function main(): Promise<void> {
         [
           "Manifest корректен.",
           `Разделов: ${manifest.modules.length}.`,
-          `Сессий: ${sessions.length}.`,
-          `Оценка: ${(minutes / 60).toFixed(1)} часа.`,
-          `Материалы реализованы: ${implemented.length}/${sessions.length}.`
+          `Полный маршрут: ${roadmap.length} сессий, ${(roadmapMinutes / 60).toFixed(1)} часа.`,
+          `Опубликовано: ${sessions.length} сессий, ${(publishedMinutes / 60).toFixed(1)} часа.`,
+          `Запланировано: ${roadmap.length - sessions.length} сессий.`,
+          `Материалы опубликованной части: ${implemented.length}/${sessions.length}.`
         ].join("\n")
       );
       return;
@@ -54,7 +69,7 @@ async function main(): Promise<void> {
       const progress = await loadProgress(root);
       const session = getNextSession(sessions, progress);
       if (!session) {
-        console.log("Курс завершён.");
+        printPublishedCompletion(roadmap);
         return;
       }
       printSession(root, session, progress.activeSessionId === session.definition.id);
@@ -66,6 +81,7 @@ async function main(): Promise<void> {
       if (!id) {
         throw new Error("Использование: pnpm session:start <id>");
       }
+      assertRoadmapSessionIsPublished(roadmap, id);
       const { session, progress } = await startSession(root, sessions, id);
       printSession(root, session, true);
       console.log(
@@ -128,7 +144,7 @@ async function main(): Promise<void> {
           `Следующий шаг: ${result.next.definition.id} — ${result.next.definition.title}.`
         );
       } else {
-        console.log("Курс завершён.");
+        printPublishedCompletion(roadmap);
       }
       return;
     }
@@ -202,6 +218,12 @@ async function main(): Promise<void> {
     default:
       throw new Error(`Неизвестная команда: ${command}`);
   }
+}
+
+function printPublishedCompletion(
+  roadmap: ReturnType<typeof flattenRoadmap>
+): void {
+  console.log(publishedCompletionLines(roadmap).join("\n"));
 }
 
 function printSession(root: string, session: FlatSession, active: boolean): void {

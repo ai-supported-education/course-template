@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { readdir, readFile, stat } from "node:fs/promises";
 import path from "node:path";
+import { loadCourseContextDocuments } from "./course-context.js";
 import { readMaterialFile } from "./lifecycle.js";
 import { loadManifest } from "./manifest.js";
 import { loadCourseProfileDocuments } from "./profiles.js";
@@ -32,6 +33,10 @@ export async function buildReviewPacket(
   const files = await collectArtifactFiles(directory);
   const manifest = await loadManifest(root);
   const profiles = await loadCourseProfileDocuments(root, manifest.profiles);
+  const courseContext = await loadCourseContextDocuments(
+    root,
+    manifest.courseContextFiles ?? []
+  );
 
   const sections = [
     `# Review package: ${session.definition.id} — ${session.definition.title}`,
@@ -63,6 +68,16 @@ export async function buildReviewPacket(
           )
           .join("\n\n")
       : "Дополнительные profiles не выбраны.",
+    "",
+    "## Canonical course context",
+    "",
+    courseContext.length > 0
+      ? courseContext
+          .map((document) =>
+            [`### ${document.path}`, "", document.source.trimEnd()].join("\n")
+          )
+          .join("\n\n")
+      : "Дополнительные course context files не выбраны.",
     "",
     "## Check results",
     ""

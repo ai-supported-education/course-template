@@ -5,6 +5,7 @@
 ├── AGENTS.md                         # поведение Codex
 ├── curriculum/
 │   ├── course.json                   # каноническая карта и порядок
+│   ├── audience.md                   # опциональный канонический audience context
 │   ├── session-contract.md           # правила 30–60 минут и прогресса
 │   ├── authoring-standard.md         # общий критерий готовности материала
 │   └── reviews/                      # публичные hash attestations PASS
@@ -37,7 +38,10 @@ support/
 
 ## Источники истины
 
-- `course.json` определяет порядок, длительность, результат, DONE и checks.
+- `course.json` определяет полный roadmap, статусы публикации, длительность,
+  результат, а для published-сессий — DONE и checks.
+- `courseContextFiles` перечисляет безопасные документы, которые должны видеть
+  все author-side reviewers и изменение которых устаревает attestation.
 - `profiles` выбирает дополнительные контракты, а `evidence` связывает DONE с
   проверяемыми артефактами.
 - README карточки объясняет тему и задаёт упражнение.

@@ -3,6 +3,7 @@
   "language": "ru",
   "audience": "{{ опишите входные знания учащегося }}",
   "profiles": [],
+  "courseContextFiles": [],
   "assumedConcepts": [],
   "estimatedHours": {
     "min": 1,

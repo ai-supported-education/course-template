@@ -17,6 +17,10 @@ describe("learner solution review packet", () => {
       "# Lab profile\nUse stop conditions.\n"
     );
     await writeFile(
+      path.join(root, "curriculum/audience.md"),
+      "# Audience\nCan use a terminal but cannot diagnose networks yet.\n"
+    );
+    await writeFile(
       path.join(root, "curriculum/course.json"),
       `${JSON.stringify(createManifest(), null, 2)}\n`
     );
@@ -29,6 +33,7 @@ describe("learner solution review packet", () => {
     const packet = await buildReviewPacket(root, createSession(), createCheck());
 
     expect(packet).toContain("Use stop conditions");
+    expect(packet).toContain("cannot diagnose networks yet");
     expect(packet).toContain("observations.csv");
     expect(packet).toContain("run,value");
     expect(packet).toContain("capture.pcap");
@@ -46,6 +51,7 @@ function createManifest(): Record<string, unknown> {
     language: "en",
     audience: "Lab learner",
     profiles: ["lab"],
+    courseContextFiles: ["curriculum/audience.md"],
     assumedConcepts: [],
     estimatedHours: { min: 0.5, max: 0.5 },
     sessionPolicy: {

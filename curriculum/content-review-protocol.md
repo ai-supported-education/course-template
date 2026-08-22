@@ -17,11 +17,16 @@
 
     pnpm author:content-review module 01
 
+Planned-сессия является только roadmap и не имеет reviewable learner material.
+Перед review автор переводит готовую карточку в `published` внутри feature branch.
+Review целого module разрешён, только если внутри него больше нет planned-сессий;
+planned roadmap следующих modules остаётся допустимым.
+
 Команда создаёт игнорируемую папку `.authoring/content-review/packets/...`:
 
 - `01-blind.md` — audience, concept graph, предыдущий материал, текущие
-  learner-facing файлы, выбранные profile contracts и краткий контракт следующего
-  шага;
+  learner-facing файлы, README раздела, выбранные profile contracts и краткий
+  контракт следующего шага;
 - `02-consistency.md` — rubric, checks/evidence, profile contracts и соседние
   карточки.
 
@@ -29,6 +34,12 @@
 blind-pass, но добавляется в `02-consistency.md` как acceptance evidence: reviewer
 должен проверить соответствие вопроса автоматическому ключу после собственного
 ответа. Сам Git ref `course-support` reviewer не открывает.
+
+Документы из `courseContextFiles` входят в обе фазы и content hash. Используйте их
+для канонической модели аудитории и других межсессионных ограничений, которые fresh
+reviewer не должен угадывать из истории генерации. Допустимы только небольшие
+текстовые файлы внутри `curriculum/` и `docs/`; hints, answers, solutions, secrets
+и traversal paths отклоняются validator-ом.
 
 По умолчанию learner files попадают в blind pass, а `rubric.md`, `quiz.json` и
 распознанные test/spec files — только в consistency pass. Для нестандартных имён
@@ -77,7 +88,8 @@ reviewer: продолжение прежнего диалога не счита
     pnpm author:content-review status session 01-01
 
 Record связан с content hash текущей карточки и соседнего контекста. Любое изменение
-этих материалов или активных profile documents делает status `STALE_OR_MISSING`.
+этих материалов, README раздела, полного roadmap, выбранных course context files
+или активных profile documents делает status `STALE_OR_MISSING`.
 После актуального PASS создайте компактную публичную запись:
 
     pnpm author:content-review attest session 01-01

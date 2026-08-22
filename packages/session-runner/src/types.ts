@@ -39,6 +39,10 @@ export const VERIFICATION_MODES = [
 
 export type VerificationMode = (typeof VERIFICATION_MODES)[number];
 
+export const SESSION_RELEASE_STATUSES = ["planned", "published"] as const;
+
+export type SessionReleaseStatus = (typeof SESSION_RELEASE_STATUSES)[number];
+
 export interface EvidenceContract {
   produces: string[];
   verifiedBy: VerificationMode[];
@@ -50,34 +54,46 @@ export interface ContentReviewFileSelection {
   exclude?: string[];
 }
 
-export interface SessionDefinition {
+export interface SessionRoadmapFields {
   id: string;
   title: string;
   minutes: number;
   kind: SessionKind;
   outcome: string;
-  done: string;
-  checks: CheckLabel[];
-  evidence: EvidenceContract;
   requires: string[];
   introduces: string[];
   defers: string[];
+}
+
+export interface PlannedSessionDefinition extends SessionRoadmapFields {
+  releaseStatus: "planned";
+}
+
+export interface SessionDefinition extends SessionRoadmapFields {
+  releaseStatus?: "published";
+  done: string;
+  checks: CheckLabel[];
+  evidence: EvidenceContract;
   contentReview?: ContentReviewFileSelection;
 }
+
+export type CourseSessionDefinition =
+  | PlannedSessionDefinition
+  | SessionDefinition;
 
 export interface CourseModule {
   id: string;
   slug: string;
   title: string;
   goal: string;
-  sessions: SessionDefinition[];
+  sessions: CourseSessionDefinition[];
 }
 
 export interface CapstoneDefinition {
   id: string;
   title: string;
   goal: string;
-  sessions: SessionDefinition[];
+  sessions: CourseSessionDefinition[];
 }
 
 export interface CourseManifest {
@@ -85,6 +101,7 @@ export interface CourseManifest {
   language: string;
   audience: string;
   profiles: string[];
+  courseContextFiles?: string[];
   assumedConcepts: string[];
   estimatedHours: {
     min: number;
@@ -105,6 +122,13 @@ export interface CourseManifest {
 export interface FlatSession {
   index: number;
   definition: SessionDefinition;
+  module: CourseModule | null;
+  isCapstone: boolean;
+}
+
+export interface FlatRoadmapSession {
+  index: number;
+  definition: CourseSessionDefinition;
   module: CourseModule | null;
   isCapstone: boolean;
 }

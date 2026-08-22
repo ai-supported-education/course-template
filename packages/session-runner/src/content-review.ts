@@ -10,11 +10,21 @@ import {
   writeFile
 } from "node:fs/promises";
 import path from "node:path";
-import { flattenManifest, getSession, loadManifest } from "./manifest.js";
+import { loadCourseContextDocuments } from "./course-context.js";
+import {
+  flattenManifest,
+  flattenRoadmap,
+  getSession,
+  loadManifest
+} from "./manifest.js";
 import { loadCourseProfileDocuments } from "./profiles.js";
 import { readSupportFile } from "./support.js";
-import type { CourseManifest, FlatSession } from "./types.js";
-import { getSessionDirectory } from "./workspace.js";
+import type {
+  CourseManifest,
+  FlatRoadmapSession,
+  FlatSession
+} from "./types.js";
+import { getModuleDirectory, getSessionDirectory } from "./workspace.js";
 
 export const CONTENT_REVIEW_VERDICTS = ["PASS", "NEEDS_REWRITE"] as const;
 export type ContentReviewVerdict = (typeof CONTENT_REVIEW_VERDICTS)[number];
@@ -76,6 +86,7 @@ interface ReviewTarget {
   targetSessions: FlatSession[];
   previous: FlatSession | null;
   next: FlatSession | null;
+  nextRoadmap: FlatRoadmapSession | null;
   title: string;
   goal: string;
 }
@@ -310,6 +321,7 @@ async function resolveTarget(
 ): Promise<ReviewTarget> {
   const manifest = await loadManifest(root);
   const sessions = flattenManifest(manifest);
+  const roadmap = flattenRoadmap(manifest);
 
   if (scope === "session") {
     const session = getSession(sessions, id);
@@ -321,12 +333,18 @@ async function resolveTarget(
       targetSessions: [session],
       previous: sessions[session.index - 1] ?? null,
       next: sessions[session.index + 1] ?? null,
+      nextRoadmap: findNextRoadmap(roadmap, id),
       title: session.definition.title,
       goal: session.definition.outcome
     };
   }
 
   if (id === manifest.capstone.id) {
+    if (manifest.capstone.sessions.some((session) => session.releaseStatus === "planned")) {
+      throw new Error(
+        `Capstone ${id} нельзя review целиком, пока он содержит planned sessions.`
+      );
+    }
     const targetSessions = sessions.filter((session) => session.isCapstone);
     if (targetSessions.length === 0) {
       throw new Error(`Capstone ${id} не содержит sessions.`);
@@ -338,13 +356,19 @@ async function resolveTarget(
       manifest.capstone.goal,
       manifest,
       sessions,
-      targetSessions
+      targetSessions,
+      roadmap
     );
   }
 
   const module = manifest.modules.find((candidate) => candidate.id === id);
   if (!module) {
     throw new Error(`Неизвестный module: ${id}`);
+  }
+  if (module.sessions.some((session) => session.releaseStatus === "planned")) {
+    throw new Error(
+      `Module ${id} нельзя review целиком, пока он содержит planned sessions.`
+    );
   }
   const targetSessions = sessions.filter((session) => session.module?.id === id);
   return makeModuleTarget(
@@ -354,7 +378,8 @@ async function resolveTarget(
     module.goal,
     manifest,
     sessions,
-    targetSessions
+    targetSessions,
+    roadmap
   );
 }
 
@@ -365,7 +390,8 @@ function makeModuleTarget(
   goal: string,
   manifest: CourseManifest,
   sessions: FlatSession[],
-  targetSessions: FlatSession[]
+  targetSessions: FlatSession[],
+  roadmap: FlatRoadmapSession[]
 ): ReviewTarget {
   const first = targetSessions[0];
   const last = targetSessions.at(-1);
@@ -381,8 +407,17 @@ function makeModuleTarget(
     sessions,
     targetSessions,
     previous: sessions[first.index - 1] ?? null,
-    next: sessions[last.index + 1] ?? null
+    next: sessions[last.index + 1] ?? null,
+    nextRoadmap: findNextRoadmap(roadmap, last.definition.id)
   };
+}
+
+function findNextRoadmap(
+  roadmap: FlatRoadmapSession[],
+  id: string
+): FlatRoadmapSession | null {
+  const current = roadmap.find((session) => session.definition.id === id);
+  return current ? (roadmap[current.index + 1] ?? null) : null;
 }
 
 async function hashReviewTarget(root: string, target: ReviewTarget): Promise<string> {
@@ -397,6 +432,24 @@ async function hashReviewTarget(root: string, target: ReviewTarget): Promise<str
     hash.update(path.relative(root, profile.path));
     hash.update("\0");
     hash.update(profile.source);
+    hash.update("\0");
+  }
+
+  for (const document of await loadCourseContextDocuments(
+    root,
+    target.manifest.courseContextFiles ?? []
+  )) {
+    hash.update(document.path);
+    hash.update("\0");
+    hash.update(document.source);
+    hash.update("\0");
+  }
+
+  const moduleOverview = await readModuleOverview(root, target);
+  if (moduleOverview) {
+    hash.update(moduleOverview.path);
+    hash.update("\0");
+    hash.update(moduleOverview.source);
     hash.update("\0");
   }
 
@@ -453,6 +506,14 @@ async function buildBlindPacket(
     "",
     await renderProfileContext(root, target),
     "",
+    "## Canonical course context",
+    "",
+    await renderCourseContextDocuments(root, target),
+    "",
+    "## Module overview",
+    "",
+    await renderModuleOverview(root, target),
+    "",
     "## Previous learning material",
     ""
   ];
@@ -471,7 +532,11 @@ async function buildBlindPacket(
   );
   sections.push("", "## Next contract", "");
   sections.push(
-    target.next ? renderSessionSummary(target.next) : "Это последний шаг курса."
+    target.next
+      ? renderSessionSummary(target.next)
+      : target.nextRoadmap
+        ? renderRoadmapSummary(target.nextRoadmap)
+        : "Это последний шаг курса."
   );
 
   return ensureTrailingNewline(sections.join("\n"));
@@ -502,6 +567,14 @@ async function buildConsistencyPacket(
     "",
     await renderProfileContext(root, target),
     "",
+    "## Canonical course context",
+    "",
+    await renderCourseContextDocuments(root, target),
+    "",
+    "## Module overview",
+    "",
+    await renderModuleOverview(root, target),
+    "",
     "## Previous card",
     "",
     target.previous
@@ -520,7 +593,9 @@ async function buildConsistencyPacket(
     "",
     target.next
       ? await renderSelectedFiles(root, [target.next], "context")
-      : "Отсутствует.",
+      : target.nextRoadmap
+        ? renderRoadmapSummary(target.nextRoadmap)
+        : "Отсутствует.",
     "",
     "## Required report format",
     "",
@@ -568,8 +643,22 @@ function renderCourseContext(target: ReviewTarget): string {
     `Assumed concepts: ${formatConcepts(target.manifest.assumedConcepts)}`,
     `Goal: ${target.goal}`,
     "",
-    "Ordered route:"
+    "Full publication roadmap:"
   ];
+  for (const module of target.manifest.modules) {
+    lines.push(`Module ${module.id}: ${module.title}`);
+    for (const definition of module.sessions) {
+      lines.push(
+        `- ${definition.id} [${definition.releaseStatus ?? "published"}]: ${definition.title}; outcome=${definition.outcome}`
+      );
+    }
+  }
+  for (const definition of target.manifest.capstone.sessions) {
+    lines.push(
+      `- ${definition.id} [${definition.releaseStatus ?? "published"}]: ${definition.title}; outcome=${definition.outcome}`
+    );
+  }
+  lines.push("", "Review neighborhood:");
   for (const session of uniqueSessions([
     target.previous,
     ...target.targetSessions,
@@ -601,6 +690,21 @@ function renderSessionSummary(session: FlatSession): string {
   ].join("; ");
 }
 
+function renderRoadmapSummary(session: FlatRoadmapSession): string {
+  const definition = session.definition;
+  return [
+    `${definition.id}: ${definition.title}`,
+    `releaseStatus=${definition.releaseStatus ?? "published"}`,
+    `kind=${definition.kind}`,
+    `minutes=${definition.minutes}`,
+    `outcome=${definition.outcome}`,
+    `requires=[${definition.requires.join(", ")}]`,
+    `introduces=[${definition.introduces.join(", ")}]`,
+    `defers=[${definition.defers.join(", ")}]`,
+    "Learner material для planned session ещё не опубликован."
+  ].join("; ");
+}
+
 async function renderProfileContext(
   root: string,
   target: ReviewTarget
@@ -622,22 +726,89 @@ async function renderProfileContext(
     .join("\n\n");
 }
 
+async function renderCourseContextDocuments(
+  root: string,
+  target: ReviewTarget
+): Promise<string> {
+  const documents = await loadCourseContextDocuments(
+    root,
+    target.manifest.courseContextFiles ?? []
+  );
+  if (documents.length === 0) {
+    return "Дополнительные course context files не выбраны.";
+  }
+  return documents
+    .map((document) =>
+      [
+        `### Context: ${document.path}`,
+        "",
+        document.source.trimEnd()
+      ].join("\n")
+    )
+    .join("\n\n");
+}
+
+async function renderModuleOverview(
+  root: string,
+  target: ReviewTarget
+): Promise<string> {
+  const overview = await readModuleOverview(root, target);
+  if (!overview) {
+    return "Module README отсутствует.";
+  }
+  return [
+    `Source: ${overview.path}`,
+    "",
+    overview.source.trimEnd()
+  ].join("\n");
+}
+
+async function readModuleOverview(
+  root: string,
+  target: ReviewTarget
+): Promise<{ path: string; source: string } | null> {
+  const first = target.targetSessions[0];
+  if (!first) {
+    return null;
+  }
+  const absolutePath = path.join(getModuleDirectory(root, first), "README.md");
+  try {
+    return {
+      path: path.relative(root, absolutePath),
+      source: await readFile(absolutePath, "utf8")
+    };
+  } catch (error) {
+    if (isNodeError(error) && error.code === "ENOENT") {
+      return null;
+    }
+    throw error;
+  }
+}
+
 function reviewManifestContext(target: ReviewTarget): unknown {
   return {
     language: target.manifest.language,
     audience: target.manifest.audience,
     profiles: target.manifest.profiles,
+    courseContextFiles: target.manifest.courseContextFiles ?? [],
     assumedConcepts: target.manifest.assumedConcepts,
     scope: target.scope,
     id: target.id,
     title: target.title,
     goal: target.goal,
-    sessions: uniqueSessions([
-      target.previous,
-      ...target.targetSessions,
-      target.next
-    ]).map((session) => session.definition)
+    modules: target.manifest.modules.map((module) => ({
+      id: module.id,
+      slug: module.slug,
+      title: module.title,
+      goal: module.goal,
+      sessions: module.sessions
+    })),
+    capstone: target.manifest.capstone
   };
+}
+
+function isNodeError(error: unknown): error is NodeJS.ErrnoException {
+  return error instanceof Error && "code" in error;
 }
 
 async function renderSelectedFiles(

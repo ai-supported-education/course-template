@@ -54,6 +54,13 @@
 Профили компонуются: например, переходный Java-курс может выбрать `transition` и
 `software`, а сетевой практикум — `lab`, `quantitative` и `network-safety`.
 
+Полный concept graph может включать будущие карточки с
+`releaseStatus: "planned"`. Для них обязателен только лёгкий roadmap-контракт;
+learner-facing DONE, checks и evidence появляются при публикации. Published
+карточки всегда образуют непрерывный префикс маршрута. Межсессионные документы,
+которые обязан видеть fresh reviewer, перечисляются в `courseContextFiles` и входят
+в content hash.
+
 ## Evidence contract
 
 Каждая сессия объявляет, что останется после работы и как это проверяется:
