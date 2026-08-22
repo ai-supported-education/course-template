@@ -1,8 +1,9 @@
 # AI-supported course template
 
 Базовый шаблон для репозитория учебного курса, который проходится в IDE короткими
-сессиями. Это не готовый курс: после создания репозитория замените демонстрационную
-карточку и заполните `curriculum/course.json` своей программой.
+сессиями. Это не готовый курс: после создания репозитория замените демонстрационный
+module, этот корневой README и repository metadata, затем заполните
+`curriculum/course.json` своей программой.
 
 Шаблон не предполагает, что любое обучение является code exercise: доступны
 каркасы для quiz, derivation, measurement lab и diagnostic. Общие правила
@@ -59,9 +60,9 @@ GitHub переносит из template только default branch, поэто�
     pnpm author:content-review module 01
 
 Родительский Codex запускает нового subagent без истории генерации. Reviewer
-сначала читает blind learner packet, затем проверяет связность с rubric, tests и
-соседними карточками. CLI сам агента не запускает; полный verdict и report хранятся
-локально в `.authoring/`, а команда `attest` публикует только компактное
+сначала читает blind learner packet, затем проверяет связность с profiles, rubric,
+checks/evidence и соседними карточками. CLI сам агента не запускает; полный verdict
+и report хранятся локально в `.authoring/`, а команда `attest` публикует компактное
 hash-свидетельство. Подробнее — в
 [content-review protocol](curriculum/content-review-protocol.md).
 

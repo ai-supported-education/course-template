@@ -9,14 +9,18 @@ const workspaceRoot = path.resolve(
 );
 
 describe("course manifest", () => {
-  it("loads the valid template curriculum", async () => {
+  it("loads any valid repository curriculum without depending on placeholder ids", async () => {
     const manifest = await loadManifest(workspaceRoot);
     const sessions = flattenManifest(manifest);
 
-    expect(manifest.modules).toHaveLength(1);
-    expect(sessions).toHaveLength(1);
-    expect(new Set(sessions.map((session) => session.definition.id)).size).toBe(1);
-    expect(sessions[0]?.definition.id).toBe("01-01");
+    expect(manifest.modules.length).toBeGreaterThan(0);
+    expect(sessions.length).toBeGreaterThan(0);
+    expect(new Set(sessions.map((session) => session.definition.id)).size).toBe(
+      sessions.length
+    );
+    expect(sessions.every((session) => session.definition.evidence.produces.length > 0)).toBe(
+      true
+    );
   });
 
   it("reports invalid duration, kind and duplicate id", () => {

@@ -71,6 +71,9 @@ describe("author content review", () => {
     expect((await getContentReviewStatus(root, "session", "01-02")).current).toBe(
       false
     );
+    await expect(
+      writeContentReviewAttestation(root, "session", "01-02")
+    ).rejects.toThrow("актуальный записанный content-review PASS");
     await writeFile(
       profilePath,
       "# Software profile\nVerify public behavior.\n"

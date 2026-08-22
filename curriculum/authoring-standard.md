@@ -123,6 +123,8 @@
 - stop conditions для неожиданных результатов или потери управления;
 - минимальное обратимое действие;
 - способ сохранить сырые evidence и параметры среды;
+- политика повторного запуска без тихого перезаписывания raw evidence и видимый
+  порядок `expected → action start → observed`;
 - cleanup/rollback и проверку конечного состояния.
 
 По умолчанию используйте simulation, localhost, synthetic data и passive
