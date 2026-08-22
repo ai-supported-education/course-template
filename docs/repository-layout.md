@@ -6,12 +6,17 @@
 ├── curriculum/
 │   ├── course.json                   # каноническая карта и порядок
 │   ├── session-contract.md           # правила 30–60 минут и прогресса
-│   └── authoring-standard.md         # критерий готовности материала
+│   ├── authoring-standard.md         # общий критерий готовности материала
+│   └── reviews/                      # публичные hash attestations PASS
+├── docs/
+│   ├── course-profiles/              # компонуемые общие контракты
+│   └── stack-profiles/               # правила конкретного стека
+├── templates/                        # code/quiz/derive/lab/diagnostic каркасы
 ├── modules/
 │   └── 01-<topic>/sessions/01-01/    # одна learner-facing карточка
 │       ├── README.md                 # объяснение и задание
 │       ├── rubric.md                 # критерии review
-│       └── ...                       # starter, tests или quiz
+│       └── ...                       # starter, quiz, worksheet, raw evidence...
 ├── capstone/sessions/                # интеграционный проект
 └── packages/session-runner/          # локальные команды обучения
 ```
@@ -33,10 +38,15 @@ support/
 ## Источники истины
 
 - `course.json` определяет порядок, длительность, результат, DONE и checks.
+- `profiles` выбирает дополнительные контракты, а `evidence` связывает DONE с
+  проверяемыми артефактами.
 - README карточки объясняет тему и задаёт упражнение.
 - `rubric.md` определяет то, что проверяет Codex-review.
-- acceptance tests проверяют внешнее поведение упражнения.
+- checks проверяют воспроизводимые свойства; acceptance tests — частный случай для
+  code exercise.
 - `course-support` содержит только вспомогательные материалы.
+- `.authoring/` содержит локальные packets и полные reports, а
+  `curriculum/reviews/` — только компактные публичные аттестации.
 
 Не дублируйте условия в тесте или в agent prompt так, чтобы они расходились с
 README. Если поле manifest и README противоречат друг другу, исправляется источник

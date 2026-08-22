@@ -94,6 +94,12 @@ function createDefinition(
     outcome: "Outcome",
     done: "Done",
     checks,
+    evidence: {
+      produces: [`artifact-${id}`],
+      verifiedBy: checks.includes("review")
+        ? ["automated", "agent"]
+        : ["automated"]
+    },
     requires: [],
     introduces: [`concept-${id}`],
     defers: []

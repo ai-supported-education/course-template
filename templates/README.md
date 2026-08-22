@@ -1,0 +1,14 @@
+# Author templates
+
+Скопируйте ближайший шаблон в learner-facing папку сессии и удалите все
+неприменимые placeholders. Шаблон — checklist автора, а не обязательная структура
+ради структуры.
+
+- `sessions/code/` — изменение программного поведения;
+- `sessions/quiz/` — предсказание и собственное объяснение;
+- `sessions/derivation/` — вывод или расчёт;
+- `sessions/measurement-lab/` — наблюдение/эксперимент с raw evidence;
+- `sessions/diagnostic/` — локализация причины по данным;
+- `rubric.md` — общий каркас agent review.
+
+Правила выбранных profiles имеют приоритет над подсказками шаблона.

@@ -5,7 +5,8 @@ import { describe, expect, it } from "vitest";
 import {
   getContentReviewStatus,
   prepareContentReview,
-  recordContentReview
+  recordContentReview,
+  writeContentReviewAttestation
 } from "../src/content-review.js";
 
 describe("author content review", () => {
@@ -20,10 +21,20 @@ describe("author content review", () => {
     expect(blind).toContain("Next contract");
     expect(blind).not.toContain("Secret rubric");
     expect(blind).not.toContain("acceptance marker");
+    expect(blind).toContain("timestamp_ms,latency_ms");
+    expect(blind).toContain("capture.pcap");
+    expect(blind).toContain("not inlined");
+    expect(blind).not.toContain("binary capture marker");
+    expect(blind).not.toContain("Java verifier marker");
+    expect(blind).not.toContain("custom consistency marker");
+    expect(blind).not.toContain("private key marker");
     expect(blind).not.toContain("learner draft");
 
     expect(consistency).toContain("Secret rubric");
     expect(consistency).toContain("acceptance marker");
+    expect(consistency).toContain("Java verifier marker");
+    expect(consistency).toContain("custom consistency marker");
+    expect(consistency).not.toContain("private key marker");
     expect(consistency).not.toContain("learner draft");
   });
 
@@ -42,6 +53,27 @@ describe("author content review", () => {
     expect(record.verdict).toBe("PASS");
     expect((await getContentReviewStatus(root, "session", "01-02")).current).toBe(
       true
+    );
+    const attestation = await writeContentReviewAttestation(
+      root,
+      "session",
+      "01-02"
+    );
+    const publicRecord = JSON.parse(
+      await readFile(attestation.path, "utf8")
+    ) as Record<string, unknown>;
+    expect(publicRecord.verdict).toBe("PASS");
+    expect(publicRecord.contentHash).toBe(record.contentHash);
+    expect(publicRecord.reportSha256).toMatch(/^[a-f0-9]{64}$/);
+
+    const profilePath = path.join(root, "docs/course-profiles/software.md");
+    await writeFile(profilePath, "# Changed software profile\n");
+    expect((await getContentReviewStatus(root, "session", "01-02")).current).toBe(
+      false
+    );
+    await writeFile(
+      profilePath,
+      "# Software profile\nVerify public behavior.\n"
     );
 
     const readme = path.join(
@@ -76,6 +108,10 @@ async function createWorkspace(): Promise<string> {
       outcome: "Previous outcome",
       done: "Previous done",
       checks: ["review"],
+      evidence: {
+        produces: ["previous explanation"],
+        verifiedBy: ["agent"]
+      },
       requires: [],
       introduces: ["previous-concept"],
       defers: []
@@ -88,9 +124,16 @@ async function createWorkspace(): Promise<string> {
       outcome: "Current outcome",
       done: "Current done",
       checks: ["unit", "review"],
+      evidence: {
+        produces: ["current artifact"],
+        verifiedBy: ["automated", "agent"]
+      },
       requires: ["previous-concept"],
       introduces: ["current-concept"],
-      defers: ["next-concept"]
+      defers: ["next-concept"],
+      contentReview: {
+        consistency: ["teacher-check.txt"]
+      }
     },
     {
       id: "01-03",
@@ -100,6 +143,10 @@ async function createWorkspace(): Promise<string> {
       outcome: "Next outcome",
       done: "Next done",
       checks: ["unit"],
+      evidence: {
+        produces: ["next artifact"],
+        verifiedBy: ["automated"]
+      },
       requires: ["current-concept"],
       introduces: ["next-concept"],
       defers: []
@@ -109,6 +156,7 @@ async function createWorkspace(): Promise<string> {
     version: 1,
     language: "en",
     audience: "Test learner",
+    profiles: ["software"],
     assumedConcepts: [],
     estimatedHours: { min: 1, max: 2 },
     sessionPolicy: {
@@ -125,7 +173,6 @@ async function createWorkspace(): Promise<string> {
         slug: "test",
         title: "Test module",
         goal: "Test review packets",
-        fsdMode: "awareness",
         sessions
       }
     ],
@@ -133,11 +180,15 @@ async function createWorkspace(): Promise<string> {
       id: "capstone",
       title: "Capstone",
       goal: "Capstone",
-      fsdMode: "awareness",
       sessions: []
     }
   };
   await mkdir(path.join(root, "curriculum"), { recursive: true });
+  await mkdir(path.join(root, "docs/course-profiles"), { recursive: true });
+  await writeFile(
+    path.join(root, "docs/course-profiles/software.md"),
+    "# Software profile\nVerify public behavior.\n"
+  );
   await writeFile(
     path.join(root, "curriculum/course.json"),
     `${JSON.stringify(manifest, null, 2)}\n`
@@ -166,6 +217,28 @@ async function createWorkspace(): Promise<string> {
       path.join(directory, "answers.json"),
       '{"reason":"learner draft"}\n'
     );
+    if (session.id === "01-02") {
+      await writeFile(
+        path.join(directory, "measurements.csv"),
+        "timestamp_ms,latency_ms\n0,12\n"
+      );
+      await writeFile(
+        path.join(directory, "capture.pcap"),
+        "binary capture marker"
+      );
+      await writeFile(
+        path.join(directory, "VerifierTest.java"),
+        "// Java verifier marker\n"
+      );
+      await writeFile(
+        path.join(directory, "teacher-check.txt"),
+        "custom consistency marker\n"
+      );
+      await writeFile(
+        path.join(directory, "private.pem"),
+        "private key marker\n"
+      );
+    }
   }
 
   return root;
@@ -185,6 +258,9 @@ function validReport(verdict: "PASS" | "NEEDS_REWRITE"): string {
     "",
     "## Findings",
     "No blockers.",
+    "",
+    "## Evidence and safety",
+    "Evidence is reproducible and scoped.",
     "",
     "## Verdict rationale",
     "Complete."

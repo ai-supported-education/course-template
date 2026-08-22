@@ -3,13 +3,16 @@ import path from "node:path";
 import {
   CHECK_LABELS,
   SESSION_KINDS,
+  VERIFICATION_MODES,
   type CourseManifest,
   type FlatSession,
   type SessionDefinition
 } from "./types.js";
+import { loadCourseProfileDocuments } from "./profiles.js";
 
 const sessionKindSet = new Set<string>(SESSION_KINDS);
 const checkLabelSet = new Set<string>(CHECK_LABELS);
+const verificationModeSet = new Set<string>(VERIFICATION_MODES);
 
 export async function loadManifest(root: string): Promise<CourseManifest> {
   const manifestPath = path.join(root, "curriculum", "course.json");
@@ -33,6 +36,8 @@ export async function loadManifest(root: string): Promise<CourseManifest> {
     throw new Error(`Manifest не прошёл проверку:\n- ${problems.join("\n- ")}`);
   }
 
+  await loadCourseProfileDocuments(root, (value as CourseManifest).profiles);
+
   return value as CourseManifest;
 }
 
@@ -53,6 +58,9 @@ export function validateManifest(value: unknown): string[] {
   }
   if (!Array.isArray(value.assumedConcepts)) {
     problems.push("assumedConcepts должен быть массивом concept ids");
+  }
+  if (!Array.isArray(value.profiles)) {
+    problems.push("profiles должен быть массивом profile ids");
   }
 
   if (problems.length > 0) {
@@ -116,6 +124,7 @@ export function validateManifest(value: unknown): string[] {
   }
 
   validateConceptFlow(value, problems);
+  validateProfiles(value, problems);
 
   return problems;
 }
@@ -173,10 +182,160 @@ function validateSessions(
         }
       }
     }
+    validateEvidence(rawSession, id, problems);
+    validateContentReviewSelection(rawSession, id, problems);
     validateConceptArray(rawSession, id, "requires", problems);
     validateConceptArray(rawSession, id, "introduces", problems);
     validateConceptArray(rawSession, id, "defers", problems);
   }
+}
+
+function validateProfiles(
+  manifest: Record<string, unknown>,
+  problems: string[]
+): void {
+  const profiles = readStringIdArray(manifest.profiles);
+  if (!profiles) {
+    return;
+  }
+  if (new Set(profiles).size !== profiles.length) {
+    problems.push("profiles содержит повторяющиеся profile ids");
+  }
+  for (const profile of profiles) {
+    if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(profile)) {
+      problems.push(`некорректный profile id ${profile}`);
+    }
+  }
+}
+
+function validateEvidence(
+  session: Record<string, unknown>,
+  id: string,
+  problems: string[]
+): void {
+  if (!isRecord(session.evidence)) {
+    problems.push(`${id}: evidence должен быть объектом`);
+    return;
+  }
+
+  const produces = readStringIdArray(session.evidence.produces);
+  const verifiedBy = readStringIdArray(session.evidence.verifiedBy);
+  if (!produces || produces.length === 0) {
+    problems.push(`${id}: evidence.produces должен быть непустым массивом`);
+  } else if (new Set(produces).size !== produces.length) {
+    problems.push(`${id}: evidence.produces содержит повторы`);
+  }
+
+  if (!verifiedBy || verifiedBy.length === 0) {
+    problems.push(`${id}: evidence.verifiedBy должен быть непустым массивом`);
+    return;
+  }
+  if (new Set(verifiedBy).size !== verifiedBy.length) {
+    problems.push(`${id}: evidence.verifiedBy содержит повторы`);
+  }
+  for (const mode of verifiedBy) {
+    if (!verificationModeSet.has(mode)) {
+      problems.push(`${id}: неизвестный verification mode ${mode}`);
+    }
+  }
+
+  const checks = Array.isArray(session.checks)
+    ? session.checks.filter((label): label is string => typeof label === "string")
+    : [];
+  if (verifiedBy.includes("agent") && !checks.includes("review")) {
+    problems.push(`${id}: agent verification требует check review`);
+  }
+  if (checks.includes("review") && !verifiedBy.includes("agent")) {
+    problems.push(`${id}: check review должен быть отражён в evidence.verifiedBy`);
+  }
+  if (
+    verifiedBy.includes("automated") &&
+    !checks.some((label) => label !== "review")
+  ) {
+    problems.push(`${id}: automated verification требует автоматический check`);
+  }
+  if (
+    checks.some((label) => label !== "review") &&
+    !verifiedBy.includes("automated")
+  ) {
+    problems.push(`${id}: автоматический check должен быть отражён в evidence.verifiedBy`);
+  }
+}
+
+function validateContentReviewSelection(
+  session: Record<string, unknown>,
+  id: string,
+  problems: string[]
+): void {
+  if (session.contentReview === undefined) {
+    return;
+  }
+  if (!isRecord(session.contentReview)) {
+    problems.push(`${id}: contentReview должен быть объектом`);
+    return;
+  }
+
+  const seen = new Map<string, string>();
+  for (const role of ["learner", "consistency", "exclude"] as const) {
+    const value = session.contentReview[role];
+    if (value === undefined) {
+      continue;
+    }
+    const files = readStringIdArray(value);
+    if (!files) {
+      problems.push(`${id}: contentReview.${role} должен быть массивом путей`);
+      continue;
+    }
+    for (const file of files) {
+      if (!isPortableRelativePath(file)) {
+        problems.push(`${id}: contentReview.${role} содержит небезопасный путь ${file}`);
+        continue;
+      }
+      if (path.posix.basename(file) === "answers.json" && role !== "exclude") {
+        problems.push(`${id}: answers.json нельзя включать в content-review packet`);
+      }
+      if (role !== "exclude" && isSensitiveReviewPath(file)) {
+        problems.push(`${id}: sensitive file ${file} нельзя включать в content-review packet`);
+      }
+      const previousRole = seen.get(file);
+      if (previousRole) {
+        problems.push(
+          `${id}: ${file} одновременно указан в contentReview.${previousRole} и contentReview.${role}`
+        );
+      } else {
+        seen.set(file, role);
+      }
+    }
+  }
+}
+
+function isSensitiveReviewPath(value: string): boolean {
+  const name = path.posix.basename(value).toLowerCase();
+  const extension = path.posix.extname(name);
+  return (
+    name === ".env" ||
+    (name.startsWith(".env.") && name !== ".env.example") ||
+    name === ".npmrc" ||
+    name === ".pypirc" ||
+    name === "credentials.json" ||
+    name === "id_ed25519" ||
+    name === "id_rsa" ||
+    name.startsWith("secrets.") ||
+    [".jks", ".key", ".p12", ".pem", ".pfx"].includes(extension)
+  );
+}
+
+function isPortableRelativePath(value: string): boolean {
+  const segments = value.split("/");
+  return (
+    value.length > 0 &&
+    !value.startsWith("/") &&
+    !value.includes("\\") &&
+    !value.includes("\0") &&
+    segments.every(
+      (segment) => segment.length > 0 && segment !== "." && segment !== ".."
+    )
+  );
 }
 
 function validateConceptFlow(
@@ -269,6 +428,16 @@ function readConceptArray(value: unknown): string[] | null {
   if (
     !Array.isArray(value) ||
     !value.every((concept) => typeof concept === "string" && concept.trim().length > 0)
+  ) {
+    return null;
+  }
+  return value;
+}
+
+function readStringIdArray(value: unknown): string[] | null {
+  if (
+    !Array.isArray(value) ||
+    !value.every((item) => typeof item === "string" && item.trim().length > 0)
   ) {
     return null;
   }

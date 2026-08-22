@@ -21,6 +21,7 @@ describe("course manifest", () => {
 
   it("reports invalid duration, kind and duplicate id", () => {
     const problems = validateManifest({
+      profiles: [],
       assumedConcepts: [],
       sessionPolicy: { minMinutes: 30, maxMinutes: 60 },
       modules: [
@@ -36,6 +37,10 @@ describe("course manifest", () => {
               outcome: "",
               done: "",
               checks: ["mystery"],
+              evidence: {
+                produces: ["artifact"],
+                verifiedBy: ["automated"]
+              },
               requires: ["missing-prerequisite"],
               introduces: ["one"],
               defers: ["never-introduced"]
@@ -48,6 +53,10 @@ describe("course manifest", () => {
               outcome: "Outcome",
               done: "Done",
               checks: ["unit"],
+              evidence: {
+                produces: ["artifact"],
+                verifiedBy: ["automated"]
+              },
               requires: ["one"],
               introduces: ["two"],
               defers: []
@@ -71,6 +80,7 @@ describe("course manifest", () => {
 
   it("requires deferred concepts to be introduced by a later session", () => {
     const problems = validateManifest({
+      profiles: [],
       assumedConcepts: [],
       sessionPolicy: { minMinutes: 30, maxMinutes: 60 },
       modules: [
@@ -86,6 +96,10 @@ describe("course manifest", () => {
               outcome: "Outcome",
               done: "Done",
               checks: ["unit"],
+              evidence: {
+                produces: ["artifact-one"],
+                verifiedBy: ["automated"]
+              },
               requires: [],
               introduces: ["already-known"],
               defers: []
@@ -98,6 +112,10 @@ describe("course manifest", () => {
               outcome: "Outcome",
               done: "Done",
               checks: ["unit"],
+              evidence: {
+                produces: ["artifact-two"],
+                verifiedBy: ["automated"]
+              },
               requires: ["already-known"],
               introduces: [],
               defers: ["already-known", "future-concept"]
@@ -110,6 +128,10 @@ describe("course manifest", () => {
               outcome: "Outcome",
               done: "Done",
               checks: ["unit"],
+              evidence: {
+                produces: ["artifact-three"],
+                verifiedBy: ["automated"]
+              },
               requires: ["already-known"],
               introduces: ["future-concept"],
               defers: []
@@ -125,6 +147,55 @@ describe("course manifest", () => {
     );
     expect(problems.some((problem) => problem.includes("future-concept"))).toBe(
       false
+    );
+  });
+
+  it("keeps evidence, checks and review file roles coherent", () => {
+    const problems = validateManifest({
+      profiles: ["lab", "lab"],
+      assumedConcepts: [],
+      sessionPolicy: { minMinutes: 30, maxMinutes: 60 },
+      modules: [
+        {
+          id: "01",
+          slug: "sample",
+          sessions: [
+            {
+              id: "01-01",
+              title: "One",
+              minutes: 30,
+              kind: "measure",
+              outcome: "Outcome",
+              done: "Done",
+              checks: ["review"],
+              evidence: {
+                produces: ["measurements.csv"],
+                verifiedBy: ["automated"]
+              },
+              contentReview: {
+                learner: ["../secret.txt", "answers.json", "private.pem", "notes.md"],
+                consistency: ["notes.md"]
+              },
+              requires: [],
+              introduces: ["measurement"],
+              defers: []
+            }
+          ]
+        }
+      ],
+      capstone: { sessions: [] }
+    });
+
+    expect(problems).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining("profiles содержит повторяющиеся"),
+        expect.stringContaining("check review должен быть отражён"),
+        expect.stringContaining("automated verification требует"),
+        expect.stringContaining("небезопасный путь"),
+        expect.stringContaining("answers.json нельзя включать"),
+        expect.stringContaining("sensitive file private.pem"),
+        expect.stringContaining("одновременно указан")
+      ])
     );
   });
 });

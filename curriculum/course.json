@@ -2,6 +2,7 @@
   "version": 1,
   "language": "ru",
   "audience": "{{ опишите входные знания учащегося }}",
+  "profiles": [],
   "assumedConcepts": [],
   "estimatedHours": {
     "min": 1,
@@ -30,6 +31,10 @@
           "outcome": "Учащийся получает первую реальную завершённую карточку.",
           "done": "Демонстрационный module заменён автором до публикации курса.",
           "checks": ["review"],
+          "evidence": {
+            "produces": ["README и rubric первой реальной карточки"],
+            "verifiedBy": ["agent"]
+          },
           "requires": [],
           "introduces": ["first-real-session"],
           "defers": []

@@ -4,7 +4,12 @@
 сессиями. Это не готовый курс: после создания репозитория замените демонстрационную
 карточку и заполните `curriculum/course.json` своей программой.
 
-Шаблон сохраняет два важных разделения:
+Шаблон не предполагает, что любое обучение является code exercise: доступны
+каркасы для quiz, derivation, measurement lab и diagnostic. Общие правила
+компонуются profiles для software, переходного обучения, количественных задач,
+лабораторий, сетей и RF.
+
+Он сохраняет два важных разделения:
 
 - автоматический `pnpm session:check` проверяет воспроизводимые факты локально;
 - Codex-review проверяет смысл, объяснение и качество решения отдельным шагом.
@@ -37,6 +42,8 @@ GitHub переносит из template только default branch, поэто�
 ## Структура
 
 - `curriculum/course.json` — порядок, длительность и условия DONE;
+- `docs/course-profiles/` — выбранные в manifest общие контракты;
+- `templates/sessions/` — каркасы разных типов evidence;
 - `modules/` и `capstone/` — learner-facing материалы и упражнения;
 - `packages/session-runner/` — локальный runner прогресса и checks;
 - ветка `course-support` — progressive hints, quiz keys и reference solutions;
@@ -53,15 +60,17 @@ GitHub переносит из template только default branch, поэто�
 
 Родительский Codex запускает нового subagent без истории генерации. Reviewer
 сначала читает blind learner packet, затем проверяет связность с rubric, tests и
-соседними карточками. CLI сам агента не запускает; verdict и content hash хранятся
-локально в `.authoring/`. Подробнее — в
+соседними карточками. CLI сам агента не запускает; полный verdict и report хранятся
+локально в `.authoring/`, а команда `attest` публикует только компактное
+hash-свидетельство. Подробнее — в
 [content-review protocol](curriculum/content-review-protocol.md).
 
 ## Стековые правила
 
-Базовый шаблон намеренно не привязан к фронтенду, FSD или React. Сравнение с
-предыдущим стеком добавляйте только в переходных курсах, когда оно действительно
-помогает понять новую модель.
+Базовый шаблон намеренно не привязан к фронтенду, FSD или React. Выберите
+[компонуемые profiles](docs/course-profiles/README.md); сравнение с предыдущим
+стеком добавляйте только через `transition`, когда оно действительно помогает
+понять новую модель.
 
 Для React-курса есть отдельный [профиль](docs/stack-profiles/react.md). Только он
 описывает, как и когда уместно преподавать Feature-Sliced Design.

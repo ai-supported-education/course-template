@@ -6,10 +6,12 @@ import {
   readFile,
   readdir,
   rename,
+  stat,
   writeFile
 } from "node:fs/promises";
 import path from "node:path";
 import { flattenManifest, getSession, loadManifest } from "./manifest.js";
+import { loadCourseProfileDocuments } from "./profiles.js";
 import { readSupportFile } from "./support.js";
 import type { CourseManifest, FlatSession } from "./types.js";
 import { getSessionDirectory } from "./workspace.js";
@@ -44,6 +46,23 @@ export interface ContentReviewStatus {
   current: boolean;
 }
 
+export interface ContentReviewAttestation {
+  schemaVersion: 1;
+  scope: ContentReviewScope;
+  id: string;
+  contentHash: string;
+  verdict: "PASS";
+  reviewedAt: string;
+  attestedAt: string;
+  reportSha256: string;
+  protocol: "blind-then-consistency-v1";
+}
+
+export interface WrittenContentReviewAttestation {
+  path: string;
+  value: ContentReviewAttestation;
+}
+
 interface ContentReviewState {
   schemaVersion: 1;
   records: Record<string, ContentReviewRecord>;
@@ -61,16 +80,61 @@ interface ReviewTarget {
   goal: string;
 }
 
-const visibleExtensions = new Set([
+type ReviewFileRole = "learner" | "consistency";
+type ReviewPacketSelection = "context" | "blind" | "consistency";
+
+interface ReviewFile {
+  absolutePath: string;
+  relativeToSession: string;
+  role: ReviewFileRole;
+}
+
+const inlineTextExtensions = new Set([
+  ".c",
+  ".cc",
+  ".cpp",
+  ".conf",
+  ".cs",
   ".css",
+  ".csv",
+  ".env.example",
+  ".go",
+  ".gradle",
+  ".h",
+  ".hpp",
   ".html",
+  ".ini",
+  ".ino",
+  ".ipynb",
+  ".java",
   ".js",
   ".jsx",
   ".json",
+  ".kt",
+  ".kts",
   ".md",
+  ".mjs",
+  ".mts",
+  ".php",
+  ".properties",
+  ".py",
+  ".r",
+  ".rb",
+  ".rs",
+  ".sh",
+  ".sql",
+  ".svg",
+  ".toml",
+  ".tsv",
   ".ts",
-  ".tsx"
+  ".tsx",
+  ".txt",
+  ".vue",
+  ".xml",
+  ".yaml",
+  ".yml"
 ]);
+const inlineTextNames = new Set(["Dockerfile", "Makefile"]);
 const ignoredDirectories = new Set([
   ".authoring",
   ".git",
@@ -79,12 +143,14 @@ const ignoredDirectories = new Set([
   "dist",
   "node_modules"
 ]);
-const neverIncludedFiles = new Set(["answers.json"]);
-const consistencyOnlyFiles = new Set([
-  "exercise.test.tsx",
-  "quiz.json",
-  "rubric.md"
+const neverIncludedFiles = new Set([
+  "answers.json",
+  "credentials.json",
+  "id_ed25519",
+  "id_rsa"
 ]);
+const secretExtensions = new Set([".jks", ".key", ".p12", ".pem", ".pfx"]);
+const maxInlineBytes = 256 * 1024;
 
 export async function prepareContentReview(
   root: string,
@@ -177,6 +243,42 @@ export async function getContentReviewStatus(
     record,
     current: record?.contentHash === contentHash
   };
+}
+
+export async function writeContentReviewAttestation(
+  root: string,
+  scope: ContentReviewScope,
+  id: string
+): Promise<WrittenContentReviewAttestation> {
+  const status = await getContentReviewStatus(root, scope, id);
+  if (!status.record || !status.current || status.record.verdict !== "PASS") {
+    throw new Error(
+      `Для ${scope} ${id} нужен актуальный записанный content-review PASS.`
+    );
+  }
+
+  const reportPath = path.resolve(root, status.record.reportPath);
+  const report = await readFile(reportPath);
+  const value: ContentReviewAttestation = {
+    schemaVersion: 1,
+    scope,
+    id,
+    contentHash: status.contentHash,
+    verdict: "PASS",
+    reviewedAt: status.record.reviewedAt,
+    attestedAt: new Date().toISOString(),
+    reportSha256: createHash("sha256").update(report).digest("hex"),
+    protocol: "blind-then-consistency-v1"
+  };
+  const outputPath = path.join(
+    root,
+    "curriculum",
+    "reviews",
+    `${scope}-${id}.json`
+  );
+  await mkdir(path.dirname(outputPath), { recursive: true });
+  await writeFile(outputPath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
+  return { path: outputPath, value };
 }
 
 export function parseContentReviewScope(value: string): ContentReviewScope {
@@ -288,6 +390,16 @@ async function hashReviewTarget(root: string, target: ReviewTarget): Promise<str
   hash.update(JSON.stringify(reviewManifestContext(target)));
   hash.update("\0");
 
+  for (const profile of await loadCourseProfileDocuments(
+    root,
+    target.manifest.profiles
+  )) {
+    hash.update(path.relative(root, profile.path));
+    hash.update("\0");
+    hash.update(profile.source);
+    hash.update("\0");
+  }
+
   const contextSessions = uniqueSessions([
     target.previous,
     ...target.targetSessions,
@@ -295,11 +407,11 @@ async function hashReviewTarget(root: string, target: ReviewTarget): Promise<str
   ]);
   for (const session of contextSessions) {
     const directory = getSessionDirectory(root, session);
-    for (const file of await listVisibleFiles(directory)) {
-      const relative = path.relative(root, file);
+    for (const file of await listReviewFiles(directory, session)) {
+      const relative = path.relative(root, file.absolutePath);
       hash.update(relative);
       hash.update("\0");
-      hash.update(await readFile(file));
+      hash.update(await readFile(file.absolutePath));
       hash.update("\0");
     }
   }
@@ -329,12 +441,17 @@ async function buildBlindPacket(
     "## Reviewer contract",
     "",
     "Работайте как учащийся с заявленными входными знаниями. У вас нет истории генерации материала и авторских объяснений.",
-    "Сначала письменно зафиксируйте: чему учит материал, причинную модель, порядок примеров, точное задание, DONE и всё, что осталось неясным.",
+    "Сначала письменно зафиксируйте: чему учит материал, причинную модель, порядок примеров, точное задание, ожидаемый evidence, DONE и всё, что осталось неясным.",
+    "Отдельно отметьте, можно ли отличить исходный факт, допущение, ожидаемый результат, наблюдение и вывод; для практики проверьте preflight, границы безопасного выполнения, stop conditions и cleanup/rollback.",
     "Не открывайте `02-consistency.md`, пока этот blind-разбор не сформулирован. Не изменяйте файлы и не ищите course-support, hints, quiz keys или solutions.",
     "",
     "## Course context",
     "",
     renderCourseContext(target),
+    "",
+    "## Active profile contracts",
+    "",
+    await renderProfileContext(root, target),
     "",
     "## Previous learning material",
     ""
@@ -342,7 +459,7 @@ async function buildBlindPacket(
 
   if (target.previous) {
     sections.push(
-      await renderSelectedFiles(root, [target.previous], learnerContextFile)
+      await renderSelectedFiles(root, [target.previous], "context")
     );
   } else {
     sections.push("Это первый доступный материал курса.");
@@ -350,7 +467,7 @@ async function buildBlindPacket(
 
   sections.push("", "## Material under review", "");
   sections.push(
-    await renderSelectedFiles(root, target.targetSessions, blindTargetFile)
+    await renderSelectedFiles(root, target.targetSessions, "blind")
   );
   sections.push("", "## Next contract", "");
   sections.push(
@@ -373,22 +490,27 @@ async function buildConsistencyPacket(
     "## Reviewer contract",
     "",
     "Открывайте этот пакет только после blind learner-pass. Теперь сопоставьте собственное понимание с manifest, rubric, acceptance tests и соседними карточками.",
-    "Проверьте prerequisites, причинные переходы, соответствие README/rubric/tests, реалистичность 30–60 минут и естественный handoff к следующей теме.",
+    "Проверьте prerequisites, причинные переходы, соответствие README/rubric/checks/evidence, реалистичность 30–60 минут и естественный handoff к следующей теме.",
+    "Для измерений и лабораторных работ убедитесь, что воспроизводимость, источник данных, допустимая область воздействия, stop conditions и cleanup/rollback описаны, а ожидаемое не выдано за фактически измеренное.",
     "Reviewer остаётся read-only и возвращает отчёт, а не переписывает учебный материал.",
     "",
     "## Full course context",
     "",
     renderCourseContext(target),
     "",
+    "## Active profile contracts",
+    "",
+    await renderProfileContext(root, target),
+    "",
     "## Previous card",
     "",
     target.previous
-      ? await renderSelectedFiles(root, [target.previous], learnerContextFile)
+      ? await renderSelectedFiles(root, [target.previous], "context")
       : "Отсутствует.",
     "",
     "## Material, rubric and tests under review",
     "",
-    await renderSelectedFiles(root, target.targetSessions, consistencyTargetFile),
+    await renderSelectedFiles(root, target.targetSessions, "consistency"),
     "",
     "## Hidden quiz acceptance evidence",
     "",
@@ -397,7 +519,7 @@ async function buildConsistencyPacket(
     "## Next card",
     "",
     target.next
-      ? await renderSelectedFiles(root, [target.next], learnerContextFile)
+      ? await renderSelectedFiles(root, [target.next], "context")
       : "Отсутствует.",
     "",
     "## Required report format",
@@ -417,6 +539,10 @@ async function buildConsistencyPacket(
     "## Findings",
     "",
     "Каждый finding: severity BLOCKER|MAJOR|MINOR, evidence и требуемый тип исправления. Не пишите готовое решение упражнения.",
+    "",
+    "## Evidence and safety",
+    "",
+    "Достаточность и воспроизводимость evidence; корректность статусов fact/assumption/expected/observed/inference; для практики — preflight, scope, stop conditions и cleanup/rollback.",
     "",
     "## Verdict rationale",
     "",
@@ -438,6 +564,7 @@ function metadataBlock(target: ReviewTarget, contentHash: string): string {
 function renderCourseContext(target: ReviewTarget): string {
   const lines = [
     `Audience: ${target.manifest.audience}`,
+    `Profiles: ${target.manifest.profiles.length > 0 ? target.manifest.profiles.join(", ") : "(none)"}`,
     `Assumed concepts: ${formatConcepts(target.manifest.assumedConcepts)}`,
     `Goal: ${target.goal}`,
     "",
@@ -462,17 +589,44 @@ function renderSessionSummary(session: FlatSession): string {
   const definition = session.definition;
   return [
     `${definition.id}: ${definition.title}`,
+    `kind=${definition.kind}`,
+    `minutes=${definition.minutes}`,
     `outcome=${definition.outcome}`,
+    `done=${definition.done}`,
+    `evidence.produces=[${definition.evidence.produces.join(", ")}]`,
+    `evidence.verifiedBy=[${definition.evidence.verifiedBy.join(", ")}]`,
     `requires=[${definition.requires.join(", ")}]`,
     `introduces=[${definition.introduces.join(", ")}]`,
     `defers=[${definition.defers.join(", ")}]`
   ].join("; ");
 }
 
+async function renderProfileContext(
+  root: string,
+  target: ReviewTarget
+): Promise<string> {
+  const profiles = await loadCourseProfileDocuments(root, target.manifest.profiles);
+  if (profiles.length === 0) {
+    return "Для курса не выбраны дополнительные profiles.";
+  }
+  return profiles
+    .map((profile) =>
+      [
+        `### Profile: ${profile.id}`,
+        "",
+        `Source: ${path.relative(root, profile.path)}`,
+        "",
+        profile.source.trimEnd()
+      ].join("\n")
+    )
+    .join("\n\n");
+}
+
 function reviewManifestContext(target: ReviewTarget): unknown {
   return {
     language: target.manifest.language,
     audience: target.manifest.audience,
+    profiles: target.manifest.profiles,
     assumedConcepts: target.manifest.assumedConcepts,
     scope: target.scope,
     id: target.id,
@@ -489,38 +643,54 @@ function reviewManifestContext(target: ReviewTarget): unknown {
 async function renderSelectedFiles(
   root: string,
   sessions: FlatSession[],
-  predicate: (name: string) => boolean
+  selection: ReviewPacketSelection
 ): Promise<string> {
   const sections: string[] = [];
   for (const session of sessions) {
     const directory = getSessionDirectory(root, session);
-    for (const file of await listVisibleFiles(directory)) {
-      if (!predicate(path.basename(file))) {
+    for (const file of await listReviewFiles(directory, session)) {
+      if (!selectedForPacket(file, selection)) {
         continue;
       }
-      sections.push(
-        `### File: ${path.relative(root, file)}`,
-        "",
-        "~~~",
-        (await readFile(file, "utf8")).trimEnd(),
-        "~~~",
-        ""
-      );
+      const fileStat = await stat(file.absolutePath);
+      const heading = `### File: ${path.relative(root, file.absolutePath)}`;
+      if (isInlineTextFile(file.relativeToSession) && fileStat.size <= maxInlineBytes) {
+        sections.push(
+          heading,
+          "",
+          "~~~~",
+          (await readFile(file.absolutePath, "utf8")).trimEnd(),
+          "~~~~",
+          ""
+        );
+      } else {
+        const digest = createHash("sha256")
+          .update(await readFile(file.absolutePath))
+          .digest("hex");
+        sections.push(
+          heading,
+          "",
+          `[not inlined: ${fileStat.size} bytes, sha256=${digest}]`,
+          "Если этот файл необходим для понимания задания или evidence, рядом нужен текстовый companion с форматом, способом получения и критериями интерпретации.",
+          ""
+        );
+      }
     }
   }
   return sections.length > 0 ? sections.join("\n").trimEnd() : "(no files)";
 }
 
-function learnerContextFile(name: string): boolean {
-  return name === "README.md" || name === "quiz.md";
-}
-
-function blindTargetFile(name: string): boolean {
-  return !consistencyOnlyFiles.has(name) && !neverIncludedFiles.has(name);
-}
-
-function consistencyTargetFile(name: string): boolean {
-  return !neverIncludedFiles.has(name);
+function selectedForPacket(
+  file: ReviewFile,
+  selection: ReviewPacketSelection
+): boolean {
+  if (selection === "context") {
+    return file.role === "learner" && isContextFile(file.relativeToSession);
+  }
+  if (selection === "blind") {
+    return file.role === "learner";
+  }
+  return true;
 }
 
 async function renderQuizAcceptanceEvidence(
@@ -561,27 +731,124 @@ async function readQuizKey(
   }
 }
 
-async function listVisibleFiles(directory: string): Promise<string[]> {
+async function listReviewFiles(
+  directory: string,
+  session: FlatSession
+): Promise<ReviewFile[]> {
   if (!(await fileExists(directory))) {
     return [];
   }
-  const result: string[] = [];
-  const entries = await readdir(directory, { withFileTypes: true });
-  for (const entry of entries.sort((left, right) => left.name.localeCompare(right.name))) {
-    if (entry.isDirectory() && ignoredDirectories.has(entry.name)) {
+  const candidates = await listRegularFiles(directory);
+  const selection = session.definition.contentReview;
+  const learner = new Set(selection?.learner ?? []);
+  const consistency = new Set(selection?.consistency ?? []);
+  const excluded = new Set(selection?.exclude ?? []);
+  const result: ReviewFile[] = [];
+  const candidatePaths = new Set(
+    candidates.map((absolutePath) =>
+      toPortablePath(path.relative(directory, absolutePath))
+    )
+  );
+
+  for (const configuredPath of [
+    ...learner,
+    ...consistency,
+    ...excluded
+  ]) {
+    if (!candidatePaths.has(configuredPath)) {
+      throw new Error(
+        `${session.definition.id}: contentReview ссылается на отсутствующий файл ${configuredPath}.`
+      );
+    }
+  }
+
+  for (const absolutePath of candidates) {
+    const relativeToSession = toPortablePath(path.relative(directory, absolutePath));
+    if (isNeverIncludedFile(relativeToSession) || excluded.has(relativeToSession)) {
       continue;
     }
-    if (entry.isFile() && neverIncludedFiles.has(entry.name)) {
+    const role: ReviewFileRole = learner.has(relativeToSession)
+      ? "learner"
+      : consistency.has(relativeToSession)
+        ? "consistency"
+        : defaultReviewFileRole(relativeToSession);
+    result.push({ absolutePath, relativeToSession, role });
+  }
+  return result;
+}
+
+async function listRegularFiles(directory: string): Promise<string[]> {
+  const result: string[] = [];
+  const entries = await readdir(directory, { withFileTypes: true });
+  for (const entry of entries.sort((left, right) =>
+    left.name.localeCompare(right.name)
+  )) {
+    if (entry.isDirectory() && ignoredDirectories.has(entry.name)) {
       continue;
     }
     const target = path.join(directory, entry.name);
     if (entry.isDirectory()) {
-      result.push(...(await listVisibleFiles(target)));
-    } else if (entry.isFile() && visibleExtensions.has(path.extname(entry.name))) {
+      result.push(...(await listRegularFiles(target)));
+    } else if (entry.isFile()) {
       result.push(target);
     }
   }
   return result;
+}
+
+function defaultReviewFileRole(relativePath: string): ReviewFileRole {
+  const portable = relativePath.toLowerCase();
+  const segments = portable.split("/");
+  const name = segments.at(-1) ?? portable;
+  if (
+    name === "rubric.md" ||
+    name === "quiz.json" ||
+    segments.some((segment) => segment === "test" || segment === "tests" || segment === "__tests__") ||
+    /\.(test|spec)\.[^.]+$/i.test(name) ||
+    /_test\.[^.]+$/i.test(name) ||
+    /test\.(java|kt|kts)$/i.test(name)
+  ) {
+    return "consistency";
+  }
+  return "learner";
+}
+
+function isContextFile(relativePath: string): boolean {
+  const name = path.posix.basename(relativePath).toLowerCase();
+  return (
+    name === "readme.md" ||
+    name === "quiz.md" ||
+    name === "lab.md" ||
+    name === "worksheet.md" ||
+    name === "task.md"
+  );
+}
+
+function isInlineTextFile(relativePath: string): boolean {
+  const name = path.posix.basename(relativePath);
+  const lowerName = name.toLowerCase();
+  return (
+    inlineTextNames.has(name) ||
+    lowerName.endsWith(".env.example") ||
+    inlineTextExtensions.has(path.posix.extname(lowerName))
+  );
+}
+
+function isNeverIncludedFile(relativePath: string): boolean {
+  const name = path.posix.basename(relativePath).toLowerCase();
+  return (
+    neverIncludedFiles.has(name) ||
+    name === ".env" ||
+    (name.startsWith(".env.") && name !== ".env.example") ||
+    name === ".npmrc" ||
+    name === ".pypirc" ||
+    name.startsWith("secrets.") ||
+    secretExtensions.has(path.posix.extname(name))
+  );
+}
+
+function toPortablePath(value: string): string {
+  return value.split(path.sep).join("/");
 }
 
 function uniqueSessions(values: Array<FlatSession | null>): FlatSession[] {
@@ -636,6 +903,7 @@ function validateReport(report: string, verdict: ContentReviewVerdict): void {
     "## Learner reconstruction",
     "## Continuity",
     "## Findings",
+    "## Evidence and safety",
     "## Verdict rationale"
   ]) {
     if (!report.includes(heading)) {

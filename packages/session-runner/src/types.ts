@@ -8,7 +8,14 @@ export const SESSION_KINDS = [
   "test",
   "integrate",
   "review",
-  "ship"
+  "ship",
+  "derive",
+  "calculate",
+  "measure",
+  "experiment",
+  "configure",
+  "diagnose",
+  "design"
 ] as const;
 
 export type SessionKind = (typeof SESSION_KINDS)[number];
@@ -17,20 +24,31 @@ export const CHECK_LABELS = [
   "quiz",
   "review",
   "typecheck",
-  "lint",
   "unit",
-  "integration",
-  "storybook",
-  "a11y",
-  "e2e",
-  "build",
-  "docker",
-  "ci",
-  "deploy",
-  "observability"
+  "integration"
 ] as const;
 
 export type CheckLabel = (typeof CHECK_LABELS)[number];
+
+export const VERIFICATION_MODES = [
+  "automated",
+  "empirical",
+  "agent",
+  "manual-approval"
+] as const;
+
+export type VerificationMode = (typeof VERIFICATION_MODES)[number];
+
+export interface EvidenceContract {
+  produces: string[];
+  verifiedBy: VerificationMode[];
+}
+
+export interface ContentReviewFileSelection {
+  learner?: string[];
+  consistency?: string[];
+  exclude?: string[];
+}
 
 export interface SessionDefinition {
   id: string;
@@ -40,9 +58,11 @@ export interface SessionDefinition {
   outcome: string;
   done: string;
   checks: CheckLabel[];
+  evidence: EvidenceContract;
   requires: string[];
   introduces: string[];
   defers: string[];
+  contentReview?: ContentReviewFileSelection;
 }
 
 export interface CourseModule {
@@ -64,6 +84,7 @@ export interface CourseManifest {
   version: number;
   language: string;
   audience: string;
+  profiles: string[];
   assumedConcepts: string[];
   estimatedHours: {
     min: number;

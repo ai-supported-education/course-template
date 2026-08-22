@@ -26,6 +26,10 @@ const session: FlatSession = {
     outcome: "Outcome",
     done: "Done",
     checks: ["quiz", "review"],
+    evidence: {
+      produces: ["quiz answers and reasoning"],
+      verifiedBy: ["automated", "agent"]
+    },
     requires: [],
     introduces: ["quiz-reasoning"],
     defers: []

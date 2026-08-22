@@ -22,6 +22,8 @@ Author-side команды не используют learner progress:
 - `author:content-review module <id>` — собрать module packet;
 - `author:content-review --record <scope> <id> PASS|NEEDS_REWRITE --report <path>` — записать verdict с content hash;
 - `author:content-review status <scope> <id>` — проверить актуальность PASS.
+- `author:content-review attest <scope> <id>` — опубликовать компактную аттестацию
+  актуального PASS в `curriculum/reviews/`.
 
 CLI не запускает агента. Fresh subagent создаёт родительский Codex по правилам
 `AGENTS.md`; локальные packets и records находятся в игнорируемой `.authoring/`.
@@ -32,5 +34,17 @@ Check label появляется только после трёх доказат
 `packages/session-runner/src`, падает на starter по ожидаемой причине и проходит
 после минимального решения. Manifest не хранит произвольные shell-команды.
 
-Базовый runner поддерживает `quiz`, `review`, `typecheck`, `unit` и `integration`.
-Остальные labels добавляются вместе с конкретным курсом и его инфраструктурой.
+Базовый runner поддерживает `quiz`, `review` и TypeScript/Vitest-реализации
+`typecheck`, `unit`, `integration`. Последние три являются reference adapter для
+software profile, а не универсальными командами Java, hardware или lab-курсов.
+Остальные labels и другие adapters добавляются вместе с конкретным курсом и тестом
+самого check.
+
+## Manifest extensions
+
+- `profiles` перечисляет контракты из `docs/course-profiles/` и
+  `docs/stack-profiles/`; отсутствующий документ делает manifest невалидным.
+- `evidence.produces` и `evidence.verifiedBy` обязательны у каждой сессии.
+- `contentReview.learner|consistency|exclude` при необходимости переопределяет роль
+  точного относительного файла в author packets. Небезопасные пути, дублирование
+  ролей и включение `answers.json` отклоняются.

@@ -6,7 +6,8 @@ import {
   parseContentReviewScope,
   parseContentReviewVerdict,
   prepareContentReview,
-  recordContentReview
+  recordContentReview,
+  writeContentReviewAttestation
 } from "./content-review.js";
 import { findWorkspaceRoot } from "./workspace.js";
 
@@ -54,6 +55,16 @@ async function main(): Promise<void> {
     );
     console.log(
       `Content review ${record.verdict} записан для ${scope} ${id}, hash ${record.contentHash}.`
+    );
+    return;
+  }
+
+  if (args[0] === "attest") {
+    const scope = parseContentReviewScope(args[1] ?? "");
+    const id = requireId(args[2]);
+    const attestation = await writeContentReviewAttestation(root, scope, id);
+    console.log(
+      `Публичная аттестация актуального PASS записана в ${attestation.path}.`
     );
     return;
   }

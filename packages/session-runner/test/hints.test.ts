@@ -30,6 +30,10 @@ const session: FlatSession = {
     outcome: "Outcome",
     done: "Done",
     checks: ["quiz"],
+    evidence: {
+      produces: ["quiz answers"],
+      verifiedBy: ["automated"]
+    },
     requires: [],
     introduces: ["progressive-hints"],
     defers: []
