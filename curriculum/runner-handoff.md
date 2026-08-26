@@ -36,8 +36,10 @@ CLI не запускает агентов. Родительский Codex со�
 `<!-- content-review:opening:end -->`. `00-novice.md` физически включает только
 prefix до marker. Для начала курса полный корневой README входит также в
 `01-blind.md` и `02-consistency.md`; later targets его не повторяют. Protocol id
-— `novice-first-contact-consistency-v4`; записи прежних protocol не считаются
-актуальными.
+— `novice-first-contact-consistency-v5`. `02-consistency.md` также содержит
+provenance всех prerequisites и полные learner README более ранних source sessions;
+изменение такого source входит в hash зависимого review. Записи прежних protocol не
+считаются актуальными.
 
 ## Добавление нового check
 

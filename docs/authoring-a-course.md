@@ -192,8 +192,11 @@ pnpm author:content-review session <id>
 полноту первого примера. Затем независимо запустите consistency-subagent с
 `fork_turns="none"` и передайте только `01-blind.md` и `02-consistency.md`: сначала
 агент реконструирует learner material по 01, затем сверяет profiles, concept graph,
-rubric, checks, evidence, safety и соседние карточки по 02. Оба reviewer read-only;
-не передавайте им авторские рассуждения или отчёт другого агента.
+rubric, checks, evidence, safety и соседние карточки по 02. Для транзитивных
+prerequisites агент сверяет provenance-карту и приложенные learner README source
+sessions, а не требует введения каждого concept в immediate previous card. Оба
+reviewer read-only; не передавайте им авторские рассуждения или отчёт другого
+агента.
 
 После отчёта:
 

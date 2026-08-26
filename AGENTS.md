@@ -95,7 +95,9 @@ acceptance test обязан:
 3. Независимо запустите consistency-subagent с `fork_turns="none"`. Передайте
    только пути к `01-blind.md` и `02-consistency.md`: сначала агент читает 01 и
    восстанавливает материал, затем открывает 02 и проверяет rubric, tests,
-   evidence, profiles и соседние карточки.
+   evidence, profiles и соседние карточки. Для prerequisites он использует
+   provenance-карту и learner sources из 02, а не предполагает, что любой concept
+   обязан быть введён непосредственно в предыдущей карточке.
 4. Не передавайте агентам историю генерации, авторские рассуждения, hints,
    solution или отчёт другого reviewer. Quiz key может находиться только в
    `02-consistency.md` как acceptance evidence. Оба reviewer работают read-only и

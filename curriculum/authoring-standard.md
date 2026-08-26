@@ -204,8 +204,11 @@ Novice-reviewer получает только `00-novice.md`, физически
 markers, и проверяет линейную понятность. Consistency-reviewer получает только
 `01-blind.md`, затем `02-consistency.md`: сначала восстанавливает модель и задание,
 после этого сверяет profile contracts, concept graph, rubric, checks, evidence и
-соседние карточки. Для публикации нужны два актуальных `PASS`; любое исправление
-устаревает по content hash и требует двух новых reviewers. После двойного session
-PASS всех карточек нужен такой же двойной module PASS.
+соседние карточки. Consistency packet содержит provenance каждого prerequisite и
+полный learner README той published session, которая впервые ввела concept: одного
+immediate previous outcome недостаточно для проверки транзитивной зависимости. Для
+публикации нужны два актуальных `PASS`; любое исправление устаревает по content hash
+и требует двух новых reviewers. После двойного session PASS всех карточек нужен
+такой же двойной module PASS.
 
 Полный протокол: [content-review-protocol.md](content-review-protocol.md).

@@ -29,7 +29,7 @@ import { getModuleDirectory, getSessionDirectory } from "./workspace.js";
 export const CONTENT_REVIEW_VERDICTS = ["PASS", "NEEDS_REWRITE"] as const;
 export const CONTENT_REVIEW_STAGES = ["novice", "consistency"] as const;
 export const CONTENT_REVIEW_PROTOCOL =
-  "novice-first-contact-consistency-v4" as const;
+  "novice-first-contact-consistency-v5" as const;
 export const CONTENT_REVIEW_OPENING_MARKER =
   "<!-- content-review:opening:end -->" as const;
 export const LEARNER_FACING_LANGUAGE_PATH =
@@ -583,6 +583,15 @@ async function hashReviewTarget(root: string, target: ReviewTarget): Promise<str
       hash.update("\0");
     }
   }
+  for (const session of collectPrerequisiteSourceSessions(target)) {
+    const absolutePath = path.join(getSessionDirectory(root, session), "README.md");
+    hash.update(`prerequisite-source:${session.definition.id}`);
+    hash.update("\0");
+    hash.update(path.relative(root, absolutePath));
+    hash.update("\0");
+    hash.update(await readFile(absolutePath));
+    hash.update("\0");
+  }
   for (const session of target.targetSessions) {
     const quizKey = await readQuizKey(root, session);
     if (quizKey) {
@@ -923,7 +932,7 @@ async function buildConsistencyPacket(
     "",
     "Открывайте этот packet только после письменно зафиксированного learner reconstruction по `01-blind.md`. Теперь сопоставьте собственное понимание с manifest, profiles, rubric, acceptance tests и соседними карточками.",
     "Вы не должны получать или искать novice report: novice и consistency verdict дают два независимых fresh agents.",
-    "Проверьте prerequisites, причинные переходы, соответствие README/rubric/checks/evidence, реалистичность 30–60 минут и естественный handoff к следующей теме.",
+    "Проверьте prerequisites, причинные переходы, соответствие README/rubric/checks/evidence, реалистичность 30–60 минут и естественный handoff к следующей теме. Для каждого prerequisite используйте provenance-карту и приложенный learner source: соседняя карточка не обязана быть местом его первоначального введения.",
     "Проверьте первое впечатление и язык: cold open без контекста у первого материала курса или главы, термины до понятного якоря, резкие переходы и машинную спецификационную прозу. Такой cold open или системно нечитаемый язык — MAJOR; отдельная тяжёлая фраза, не мешающая модели, — MINOR.",
     "Проверьте openings курса, module и session по собственному blind reconstruction. Не засчитывайте хороший верхнеуровневый README или позднее объяснение как исправление холодного начала карточки.",
     "Каждое языковое замечание обязано привести точную цитату, описать эффект для учащегося и назвать тип исправления, не переписывая материал за автора.",
@@ -933,6 +942,10 @@ async function buildConsistencyPacket(
     "## Full course context",
     "",
     renderCourseContext(target),
+    "",
+    "## Prerequisite provenance",
+    "",
+    await renderPrerequisiteProvenance(root, target),
     "",
     "## Active profile contracts",
     "",
@@ -1050,6 +1063,105 @@ function renderCourseContext(target: ReviewTarget): string {
       : "-";
     lines.push(`${marker} ${renderSessionSummary(session)}`);
   }
+  return lines.join("\n");
+}
+
+interface PrerequisiteProvenance {
+  concept: string;
+  requiredBy: FlatSession;
+  assumed: boolean;
+  source: FlatSession | null;
+}
+
+function collectPrerequisiteProvenance(
+  target: ReviewTarget
+): PrerequisiteProvenance[] {
+  const assumedConcepts = new Set(target.manifest.assumedConcepts);
+  const provenance: PrerequisiteProvenance[] = [];
+
+  for (const requiredBy of target.targetSessions) {
+    for (const concept of requiredBy.definition.requires) {
+      const assumed = assumedConcepts.has(concept);
+      let source: FlatSession | null = null;
+      if (!assumed) {
+        for (const candidate of target.sessions) {
+          if (candidate.index >= requiredBy.index) {
+            break;
+          }
+          if (candidate.definition.introduces.includes(concept)) {
+            source = candidate;
+          }
+        }
+      }
+      provenance.push({ concept, requiredBy, assumed, source });
+    }
+  }
+
+  return provenance;
+}
+
+function collectPrerequisiteSourceSessions(target: ReviewTarget): FlatSession[] {
+  return uniqueSessions(
+    collectPrerequisiteProvenance(target).map((entry) => entry.source)
+  );
+}
+
+async function renderPrerequisiteProvenance(
+  root: string,
+  target: ReviewTarget
+): Promise<string> {
+  const provenance = collectPrerequisiteProvenance(target);
+  if (provenance.length === 0) {
+    return "У target нет объявленных prerequisites.";
+  }
+
+  const lines = [
+    "Не выводите происхождение prerequisite только из immediate previous card. Ниже для каждого required concept указан course baseline либо более ранняя published session, а затем приложен полный learner-facing README каждой source session."
+  ];
+
+  for (const requiredBy of target.targetSessions) {
+    const entries = provenance.filter(
+      (entry) => entry.requiredBy.definition.id === requiredBy.definition.id
+    );
+    lines.push("", `### Required by ${requiredBy.definition.id}`);
+    for (const entry of entries) {
+      if (entry.assumed) {
+        lines.push(
+          `- \`${entry.concept}\`: declared in course assumedConcepts.`
+        );
+      } else if (entry.source) {
+        lines.push(
+          `- \`${entry.concept}\`: introduced by published session ${entry.source.definition.id} before ${requiredBy.definition.id}; learner source is included below.`
+        );
+      } else {
+        lines.push(
+          `- \`${entry.concept}\`: MISSING — neither assumed nor introduced by an earlier published session.`
+        );
+      }
+    }
+  }
+
+  const sourceSessions = collectPrerequisiteSourceSessions(target);
+  if (sourceSessions.length === 0) {
+    return lines.join("\n");
+  }
+
+  lines.push("", "### Learner sources for introduced prerequisites");
+  for (const session of sourceSessions) {
+    const absolutePath = path.join(getSessionDirectory(root, session), "README.md");
+    lines.push(
+      "",
+      `#### Source session ${session.definition.id}: ${session.definition.title}`,
+      "",
+      `Introduces: ${formatConcepts(session.definition.introduces)}`,
+      `File: ${path.relative(root, absolutePath)}`,
+      "",
+      "~~~~",
+      (await readFile(absolutePath, "utf8")).trimEnd(),
+      "~~~~"
+    );
+  }
+
   return lines.join("\n");
 }
 

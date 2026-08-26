@@ -100,6 +100,47 @@ describe("author content review", () => {
     expect(consistency).not.toContain("## First contact and language");
   });
 
+  it("includes and hashes learner sources for transitive prerequisites", async () => {
+    const root = await createWorkspace();
+    const manifestPath = path.join(root, "curriculum/course.json");
+    const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as {
+      modules: Array<{
+        sessions: Array<{ id: string; requires: string[] }>;
+      }>;
+    };
+    const target = manifest.modules[0]!.sessions.find(
+      (session) => session.id === "01-03"
+    );
+    if (!target) {
+      throw new Error("Missing fixture session 01-03");
+    }
+    target.requires = ["previous-concept", "current-concept"];
+    await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+
+    const before = await prepareContentReview(root, "session", "01-03");
+    const blind = await readFile(before.blindPacketPath, "utf8");
+    const consistency = await readFile(before.consistencyPacketPath, "utf8");
+
+    expect(blind).not.toContain("## Prerequisite provenance");
+    expect(blind).not.toContain("Previous late explanation");
+    expect(consistency).toContain("## Prerequisite provenance");
+    expect(consistency).toContain(
+      "`previous-concept`: introduced by published session 01-01 before 01-03"
+    );
+    expect(consistency).toContain("#### Source session 01-01: Previous");
+    expect(consistency).toContain("Previous late explanation");
+
+    await writeFile(
+      path.join(root, "modules/01-test/sessions/01-01/README.md"),
+      learnerReadme(
+        "# Previous explanation",
+        "Changed transitive prerequisite explanation"
+      )
+    );
+    const after = await prepareContentReview(root, "session", "01-03");
+    expect(after.contentHash).not.toBe(before.contentHash);
+  });
+
   it("shows only root, module and target openings for the first course session", async () => {
     const root = await createWorkspace();
     const prepared = await prepareContentReview(root, "session", "01-01");
@@ -373,7 +414,7 @@ describe("author content review", () => {
     }
   });
 
-  it("treats legacy state and a public schema v1 file as no current v4 review", async () => {
+  it("treats legacy state and a public pre-v5 file as no current v5 review", async () => {
     const root = await createWorkspace();
     const stateDirectory = path.join(root, ".authoring/content-review");
     await mkdir(stateDirectory, { recursive: true });
@@ -396,7 +437,7 @@ describe("author content review", () => {
     await mkdir(path.join(root, "curriculum/reviews"), { recursive: true });
     await writeFile(
       path.join(root, "curriculum/reviews/session-01-02.json"),
-      JSON.stringify({ schemaVersion: 1, protocol: "first-contact-blind-consistency-v3" })
+      JSON.stringify({ schemaVersion: 2, protocol: "novice-first-contact-consistency-v4" })
     );
 
     const status = await getContentReviewStatus(root, "session", "01-02");

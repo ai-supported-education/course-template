@@ -1,6 +1,6 @@
 # Независимый content-review учебного материала
 
-Protocol id: `novice-first-contact-consistency-v4`.
+Protocol id: `novice-first-contact-consistency-v5`.
 
 ## Зачем нужны два reviewer
 
@@ -60,8 +60,17 @@ review автор переводит готовую карточку в `publish
   DONE, но без rubric и авторского acceptance intent; для начала курса сюда также
   входит полный корневой learner README;
 - `02-consistency.md` — manifest/concept graph, rubric, checks/evidence, profile
-  contracts, acceptance evidence и соседние карточки; для начала курса корневой
-  README повторяется как course-level evidence.
+  contracts, acceptance evidence, соседние карточки и provenance каждого
+  prerequisite; для начала курса корневой README повторяется как course-level
+  evidence.
+
+Prerequisite provenance не приравнивает «известно до текущей карточки» к
+«обязательно введено в immediate previous card». Для каждого `requires` packet
+указывает одно из трёх состояний: concept входит в `assumedConcepts`, concept введён
+конкретной более ранней published session либо источник отсутствует. Во втором
+случае в `02-consistency.md` прикладывается полный learner-facing README source
+session. Этот README входит в content hash зависимой проверки: его последующее
+изменение делает review устаревшим.
 
 Для первой опубликованной карточки курса novice packet включает opening корневого
 README, первого module и карточки. Для later session вместо повторного корневого
@@ -140,7 +149,9 @@ Reviewer обязан:
 2. Зафиксировать неизвестные термины, скрытые prerequisites и места, где вывод
    приходится угадывать.
 3. Только после этого открыть `02-consistency.md` и сверить README с concept graph,
-   profiles, rubric, checks/evidence, предыдущей и следующей карточкой.
+   profiles, rubric, checks/evidence, предыдущей и следующей карточкой. Для каждого
+   prerequisite проверить provenance и приложенный learner source, не делая вывод
+   только по immediate previous card.
 4. Проверить различение source fact / assumption / expected / observed / inference,
    воспроизводимость evidence и применимые safety boundaries.
 5. Не читать и не учитывать выводы novice-reviewer.
@@ -197,12 +208,12 @@ courseContextFiles или активных profile documents делает обе
     pnpm author:content-review attest session 01-01
 
 Публичный JSON использует `schemaVersion: 2` и
-`protocol: "novice-first-contact-consistency-v4"`. В объекте `reviews` находятся
+`protocol: "novice-first-contact-consistency-v5"`. В объекте `reviews` находятся
 отдельные `novice` и `consistency`; для каждой проверки публикуются verdict, время
 review и SHA-256 соответствующего локального отчёта. Общий content hash остаётся
 на уровне attestation. Raw reports и packets остаются в `.authoring/`.
 
-Attestation v1 и protocol v3 не удовлетворяют v4 и автоматически считаются
+Attestation v1 и protocol до v5 не удовлетворяют v5 и автоматически считаются
 устаревшими; старый одиночный PASS не мигрируется в один из новых stages. После
 двойного PASS всех опубликованных карточек module проходит такую же пару review и
 получает schema v2 attestation. Только актуальные двойные session и module PASS
