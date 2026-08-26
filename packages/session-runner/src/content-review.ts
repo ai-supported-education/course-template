@@ -1469,7 +1469,13 @@ async function listReviewFiles(
   if (!(await fileExists(directory))) {
     return [];
   }
-  const candidates = await listRegularFiles(directory);
+  const candidates = (await listRegularFiles(directory)).sort((left, right) => {
+    const leftRelative = toPortablePath(path.relative(directory, left));
+    const rightRelative = toPortablePath(path.relative(directory, right));
+    const leftRank = leftRelative === "README.md" ? 0 : 1;
+    const rightRank = rightRelative === "README.md" ? 0 : 1;
+    return leftRank - rightRank || leftRelative.localeCompare(rightRelative);
+  });
   const selection = session.definition.contentReview;
   const learner = new Set(selection?.learner ?? []);
   const consistency = new Set(selection?.consistency ?? []);

@@ -87,6 +87,9 @@ describe("author content review", () => {
     expect(blind).toContain("## Explanation and examples");
     expect(blind).toContain("## Task, evidence and DONE");
     expect(blind).toContain("## Continuity");
+    expect(blind.indexOf("Current explanation")).toBeLessThan(
+      blind.indexOf("timestamp_ms,latency_ms")
+    );
 
     expect(consistency).toContain("Secret rubric");
     expect(consistency).toContain("acceptance marker");
