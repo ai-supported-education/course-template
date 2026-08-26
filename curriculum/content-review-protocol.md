@@ -57,9 +57,11 @@ review автор переводит готовую карточку в `publish
   применимых README до `<!-- content-review:opening:end -->`;
 - `01-blind.md` — полные learner-facing файлы карточки, безопасный контекст
   аудитории и материалы, необходимые для восстановления outcome, модели, задания и
-  DONE, но без rubric и авторского acceptance intent;
+  DONE, но без rubric и авторского acceptance intent; для начала курса сюда также
+  входит полный корневой learner README;
 - `02-consistency.md` — manifest/concept graph, rubric, checks/evidence, profile
-  contracts, acceptance evidence и соседние карточки.
+  contracts, acceptance evidence и соседние карточки; для начала курса корневой
+  README повторяется как course-level evidence.
 
 Для первой опубликованной карточки курса novice packet включает opening корневого
 README, первого module и карточки. Для later session вместо повторного корневого
@@ -70,6 +72,13 @@ packet точно перечисляет включённые уровни.
 Для module review первая опубликованная глава начинается с course opening; более
 поздняя — с результата предыдущей карточки. Далее следуют opening текущего module и
 его published sessions. Каждый README всё равно обрывается на собственном marker.
+
+Consistency-review первой карточки и первого module получает не только обрезанный
+opening в отдельном novice packet, но и полный корневой README в обеих своих
+фазах. Так consistency-agent может сначала восстановить learner route, а затем
+проверить course-level promises и язык. Для later targets корневой README
+намеренно не повторяется; их вход задают предыдущий learner-visible результат и
+текущий module.
 
 `answers.json`, hints и solutions не попадают в novice/blind phases. Quiz key
 добавляется только в `02-consistency.md` как acceptance evidence. Reviewer не

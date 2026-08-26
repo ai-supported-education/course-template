@@ -34,8 +34,9 @@ CLI не запускает агентов. Родительский Codex со�
 
 Все published course/module/session README содержат ровно один marker
 `<!-- content-review:opening:end -->`. `00-novice.md` физически включает только
-prefix до marker; полный README остаётся в blind packet. Protocol id —
-`novice-first-contact-consistency-v4`; записи прежних protocol не считаются
+prefix до marker. Для начала курса полный корневой README входит также в
+`01-blind.md` и `02-consistency.md`; later targets его не повторяют. Protocol id
+— `novice-first-contact-consistency-v4`; записи прежних protocol не считаются
 актуальными.
 
 ## Добавление нового check

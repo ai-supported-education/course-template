@@ -532,6 +532,14 @@ async function hashReviewTarget(root: string, target: ReviewTarget): Promise<str
     hash.update("\0");
   }
 
+  const courseOverview = await readCourseOverview(root, target);
+  if (courseOverview) {
+    hash.update(`course-overview:${courseOverview.path}`);
+    hash.update("\0");
+    hash.update(courseOverview.source);
+    hash.update("\0");
+  }
+
   for (const profile of await loadCourseProfileDocuments(
     root,
     target.manifest.profiles
@@ -649,7 +657,7 @@ async function buildNovicePacket(
 }
 
 function describeNoviceCoverage(target: ReviewTarget): string {
-  const startsCourse = target.targetSessions[0]?.index === 0;
+  const startsCourse = targetStartsCourse(target);
   if (startsCourse) {
     return "Scope note: это начало курса, поэтому packet показывает openings курса, module и проверяемых sessions. Оцените каждый уровень отдельно.";
   }
@@ -663,6 +671,45 @@ function renderNoviceBaseline(target: ReviewTarget): string {
   return [
     `Audience: ${target.manifest.audience}`,
     `Assumed concepts: ${formatConcepts(target.manifest.assumedConcepts)}`
+  ].join("\n");
+}
+
+function targetStartsCourse(target: ReviewTarget): boolean {
+  return target.targetSessions[0]?.index === 0;
+}
+
+async function readCourseOverview(
+  root: string,
+  target: ReviewTarget
+): Promise<{ path: string; source: string } | null> {
+  if (!targetStartsCourse(target)) {
+    return null;
+  }
+  const absolutePath = path.join(root, "README.md");
+  try {
+    return {
+      path: toPortablePath(path.relative(root, absolutePath)),
+      source: await readFile(absolutePath, "utf8")
+    };
+  } catch (error) {
+    throw new Error(
+      `Не удалось прочитать обязательный course overview ${absolutePath}: ${formatError(error)}`
+    );
+  }
+}
+
+async function renderCourseOverview(
+  root: string,
+  target: ReviewTarget
+): Promise<string> {
+  const overview = await readCourseOverview(root, target);
+  if (!overview) {
+    return "Корневой README намеренно не включён: проверяемый scope начинается после первой карточки курса и получает continuity из предыдущего learner-visible результата.";
+  }
+  return [
+    `Source: ${overview.path}`,
+    "",
+    overview.source.trimEnd()
   ].join("\n");
 }
 
@@ -725,7 +772,7 @@ async function collectNoviceOpeningDocuments(
     });
   };
 
-  const startsCourse = first.index === 0;
+  const startsCourse = targetStartsCourse(target);
 
   if (startsCourse) {
     await addReadme(path.join(root, "README.md"));
@@ -822,6 +869,10 @@ async function buildBlindPacket(
     "",
     renderNoviceBaseline(target),
     "",
+    "## Course overview",
+    "",
+    await renderCourseOverview(root, target),
+    "",
     "## Canonical course context",
     "",
     await renderCourseContextDocuments(root, target),
@@ -894,6 +945,10 @@ async function buildConsistencyPacket(
     "## Learner-facing language contract",
     "",
     (await readLearnerFacingLanguage(root)).source.trimEnd(),
+    "",
+    "## Course overview",
+    "",
+    await renderCourseOverview(root, target),
     "",
     "## Module overview",
     "",

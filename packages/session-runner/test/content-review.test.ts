@@ -74,6 +74,8 @@ describe("author content review", () => {
     expect(blind).not.toContain("quiz data marker");
     expect(blind).toContain("Canonical test audience");
     expect(blind).toContain("Module learning arc");
+    expect(blind).not.toContain("Root learner welcome");
+    expect(blind).not.toContain("Root late explanation");
     expect(blind).not.toContain("# Software profile");
     expect(blind).not.toContain("requires=[previous-concept]");
     expect(blind).toContain("Не открывайте `00-novice.md`");
@@ -89,6 +91,8 @@ describe("author content review", () => {
     expect(consistency).not.toContain("reference solution marker");
     expect(consistency).toContain("quiz data marker");
     expect(consistency).toContain("Canonical test audience");
+    expect(consistency).not.toContain("Root learner welcome");
+    expect(consistency).not.toContain("Root late explanation");
     expect(consistency).toContain("01-04 [planned]: Future contract");
     expect(consistency).toContain("Calm learner-facing language contract");
     expect(consistency).toContain("не должны получать или искать novice report");
@@ -113,6 +117,49 @@ describe("author content review", () => {
     expect(packet).not.toContain("Module late explanation");
     expect(packet).not.toContain("Previous late explanation");
     expect(packet).not.toContain(CONTENT_REVIEW_OPENING_MARKER);
+  });
+
+  it("includes the full root overview in both consistency phases for first-course targets", async () => {
+    const root = await createWorkspace();
+    for (const [scope, id] of [
+      ["session", "01-01"],
+      ["module", "01"]
+    ] as const) {
+      const prepared = await prepareContentReview(root, scope, id);
+      const blind = await readFile(prepared.blindPacketPath, "utf8");
+      const consistency = await readFile(
+        prepared.consistencyPacketPath,
+        "utf8"
+      );
+
+      for (const packet of [blind, consistency]) {
+        expect(packet).toContain("## Course overview");
+        expect(packet).toContain("Source: README.md");
+        expect(packet).toContain("Root learner welcome");
+        expect(packet).toContain("Root late explanation");
+      }
+    }
+  });
+
+  it("keeps the root overview absent from later session and module packets", async () => {
+    const root = await createTwoModuleWorkspace();
+    for (const [scope, id] of [
+      ["session", "01-02"],
+      ["module", "02"]
+    ] as const) {
+      const prepared = await prepareContentReview(root, scope, id);
+      const blind = await readFile(prepared.blindPacketPath, "utf8");
+      const consistency = await readFile(
+        prepared.consistencyPacketPath,
+        "utf8"
+      );
+
+      for (const packet of [blind, consistency]) {
+        expect(packet).toContain("Корневой README намеренно не включён");
+        expect(packet).not.toContain("Root learner welcome");
+        expect(packet).not.toContain("Root late explanation");
+      }
+    }
   });
 
   it("shows learner-visible previous summary and relevant openings for a later module", async () => {
@@ -300,6 +347,30 @@ describe("author content review", () => {
     expect(stale.reviews.novice.record?.contentHash).toBe(
       stale.reviews.consistency.record?.contentHash
     );
+  });
+
+  it("stales both stages for first session and module when only late root text changes", async () => {
+    const root = await createWorkspace();
+    await recordBothPasses(root, "session", "01-01");
+    await recordBothPasses(root, "module", "01");
+
+    await writeFile(
+      path.join(root, "README.md"),
+      learnerReadme(
+        "# Root learner welcome",
+        "Changed root text after the opening marker"
+      )
+    );
+
+    for (const [scope, id] of [
+      ["session", "01-01"],
+      ["module", "01"]
+    ] as const) {
+      const status = await getContentReviewStatus(root, scope, id);
+      expect(status.reviews.novice.current).toBe(false);
+      expect(status.reviews.consistency.current).toBe(false);
+      expect(status.current).toBe(false);
+    }
   });
 
   it("treats legacy state and a public schema v1 file as no current v4 review", async () => {
