@@ -18,7 +18,8 @@ Runner читает `curriculum/course.json`, разрешает одну акт
 
 Author-side команды не используют learner progress:
 
-- `author:content-review session <id>` — собрать blind/consistency packets;
+- `author:content-review session <id>` — собрать first-contact, blind и consistency
+  packets;
 - `author:content-review module <id>` — собрать module packet;
 - `author:content-review --record <scope> <id> PASS|NEEDS_REWRITE --report <path>` — записать verdict с content hash;
 - `author:content-review status <scope> <id>` — проверить актуальность PASS.

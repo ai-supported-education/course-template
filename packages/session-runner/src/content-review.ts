@@ -27,6 +27,10 @@ import type {
 import { getModuleDirectory, getSessionDirectory } from "./workspace.js";
 
 export const CONTENT_REVIEW_VERDICTS = ["PASS", "NEEDS_REWRITE"] as const;
+export const CONTENT_REVIEW_PROTOCOL =
+  "first-contact-blind-consistency-v3" as const;
+export const LEARNER_FACING_LANGUAGE_PATH =
+  "docs/learner-facing-language.md" as const;
 export type ContentReviewVerdict = (typeof CONTENT_REVIEW_VERDICTS)[number];
 export type ContentReviewScope = "session" | "module";
 
@@ -35,6 +39,7 @@ export interface PreparedContentReview {
   id: string;
   contentHash: string;
   packetDirectory: string;
+  firstContactPacketPath: string;
   blindPacketPath: string;
   consistencyPacketPath: string;
 }
@@ -65,7 +70,7 @@ export interface ContentReviewAttestation {
   reviewedAt: string;
   attestedAt: string;
   reportSha256: string;
-  protocol: "blind-then-consistency-v1";
+  protocol: typeof CONTENT_REVIEW_PROTOCOL;
 }
 
 export interface WrittenContentReviewAttestation {
@@ -92,12 +97,22 @@ interface ReviewTarget {
 }
 
 type ReviewFileRole = "learner" | "consistency";
-type ReviewPacketSelection = "context" | "blind" | "consistency";
+type ReviewPacketSelection =
+  | "context"
+  | "first-contact"
+  | "blind"
+  | "consistency";
 
 interface ReviewFile {
   absolutePath: string;
   relativeToSession: string;
   role: ReviewFileRole;
+}
+
+interface FirstContactDocument {
+  absolutePath: string;
+  relativePath: string;
+  source: Buffer | null;
 }
 
 const inlineTextExtensions = new Set([
@@ -176,10 +191,19 @@ export async function prepareContentReview(
     "packets",
     `${scope}-${id}-${contentHash.slice(0, 12)}`
   );
+  const firstContactPacketPath = path.join(
+    packetDirectory,
+    "00-first-contact.md"
+  );
   const blindPacketPath = path.join(packetDirectory, "01-blind.md");
   const consistencyPacketPath = path.join(packetDirectory, "02-consistency.md");
 
   await mkdir(packetDirectory, { recursive: true });
+  await writeFile(
+    firstContactPacketPath,
+    await buildFirstContactPacket(root, target),
+    "utf8"
+  );
   await writeFile(
     blindPacketPath,
     await buildBlindPacket(root, target, contentHash),
@@ -196,6 +220,7 @@ export async function prepareContentReview(
     id,
     contentHash,
     packetDirectory,
+    firstContactPacketPath,
     blindPacketPath,
     consistencyPacketPath
   };
@@ -279,7 +304,7 @@ export async function writeContentReviewAttestation(
     reviewedAt: status.record.reviewedAt,
     attestedAt: new Date().toISOString(),
     reportSha256: createHash("sha256").update(report).digest("hex"),
-    protocol: "blind-then-consistency-v1"
+    protocol: CONTENT_REVIEW_PROTOCOL
   };
   const outputPath = path.join(
     root,
@@ -304,6 +329,19 @@ export function parseContentReviewVerdict(value: string): ContentReviewVerdict {
     return value;
   }
   throw new Error("Verdict должен быть PASS или NEEDS_REWRITE.");
+}
+
+export function formatPreparedContentReview(
+  prepared: PreparedContentReview
+): string {
+  return [
+    `Content review packet готов для ${prepared.scope} ${prepared.id}.`,
+    `Hash: ${prepared.contentHash}.`,
+    `1. First contact: ${prepared.firstContactPacketPath}.`,
+    `2. Blind pass: ${prepared.blindPacketPath}.`,
+    `3. Consistency pass: ${prepared.consistencyPacketPath}.`,
+    "Запустите отдельного subagent с fork_turns=none. Он должен прочитать packets строго в порядке 00 → 01 → 02 и зафиксировать выводы каждого этапа до открытия следующего."
+  ].join("\n");
 }
 
 function getAuthoringDirectory(root: string): string {
@@ -412,8 +450,23 @@ function findNextRoadmap(
 
 async function hashReviewTarget(root: string, target: ReviewTarget): Promise<string> {
   const hash = createHash("sha256");
+  hash.update(`protocol:${CONTENT_REVIEW_PROTOCOL}`);
+  hash.update("\0");
   hash.update(JSON.stringify(reviewManifestContext(target)));
   hash.update("\0");
+
+  const languageContract = await readLearnerFacingLanguage(root);
+  hash.update(languageContract.path);
+  hash.update("\0");
+  hash.update(languageContract.source);
+  hash.update("\0");
+
+  for (const document of await collectFirstContactDocuments(root, target)) {
+    hash.update(`first-contact:${document.relativePath}`);
+    hash.update("\0");
+    hash.update(document.source ?? "<missing>");
+    hash.update("\0");
+  }
 
   for (const profile of await loadCourseProfileDocuments(
     root,
@@ -471,6 +524,250 @@ async function hashReviewTarget(root: string, target: ReviewTarget): Promise<str
   return hash.digest("hex");
 }
 
+async function buildFirstContactPacket(
+  root: string,
+  target: ReviewTarget
+): Promise<string> {
+  const sections = [
+    "# First contact learner pass",
+    "",
+    "## Reviewer contract",
+    "",
+    "Вы впервые видите проверяемый фрагмент учебного маршрута. Читайте файлы ниже строго по порядку и опирайтесь только на показанный learner-facing текст.",
+    describeFirstContactCoverage(target),
+    "Для каждого показанного learner README сначала прочитайте только заголовок и вступление до первого формального outcome/scope-раздела. Если такая граница не размечена, остановитесь после первых 2–4 абзацев. Зафиксируйте first impression и только затем продолжайте этот файл.",
+    "До открытия других packet письменно зафиксируйте: где вы оказались, зачем тема нужна, на какой знакомый опыт опирается объяснение, какой вопрос ведёт материал и что осталось неясным.",
+    "Отдельно отметьте cold open без подводки, термины до их бытового или предметного якоря, резкие переходы и машинный язык. Для каждого замечания сохраните точную цитату, эффект для учащегося и тип требуемого исправления.",
+    "Оцените раздельно только те уровни входа, которые перечислены в scope note выше. Удачный верхнеуровневый README не компенсирует cold open самой карточки; позднее объяснение не исправляет первое впечатление задним числом.",
+    "Не открывайте `01-blind.md`, `02-consistency.md` или любые другие файлы, пока first-contact разбор не записан.",
+    "",
+    "## Learner-facing route",
+    "",
+    await renderFirstContactDocuments(root, target)
+  ];
+
+  return ensureTrailingNewline(sections.join("\n"));
+}
+
+function describeFirstContactCoverage(target: ReviewTarget): string {
+  const startsCourse = target.targetSessions[0]?.index === 0;
+  if (startsCourse) {
+    return "Scope note: это начало курса, поэтому packet показывает course opening, module opening и проверяемую session. Оцените все три уровня.";
+  }
+  if (target.scope === "module") {
+    return "Scope note: это не первая глава курса. Корневой README намеренно не повторяется: учащийся приходит сюда через предыдущую карточку. Оцените handoff, module opening и sessions; отсутствие course opening в этом packet не является finding.";
+  }
+  return "Scope note: это не первая карточка курса. Корневой README намеренно не повторяется: учащийся приходит сюда через предыдущую карточку. Оцените module opening, handoff и session opening; отсутствие course opening в этом packet не является finding.";
+}
+
+async function collectFirstContactDocuments(
+  root: string,
+  target: ReviewTarget
+): Promise<FirstContactDocument[]> {
+  const documents: FirstContactDocument[] = [];
+  const seen = new Set<string>();
+  const first = target.targetSessions[0];
+  if (!first) {
+    return documents;
+  }
+
+  const addStandalone = async (absolutePath: string): Promise<void> => {
+    if (seen.has(absolutePath)) {
+      return;
+    }
+    seen.add(absolutePath);
+    let source: Buffer | null;
+    try {
+      source = await readFile(absolutePath);
+    } catch (error) {
+      if (isNodeError(error) && error.code === "ENOENT") {
+        source = null;
+      } else {
+        throw error;
+      }
+    }
+    documents.push({
+      absolutePath,
+      relativePath: toPortablePath(path.relative(root, absolutePath)),
+      source
+    });
+  };
+
+  const addSessionFiles = async (
+    session: FlatSession,
+    selection: "context" | "first-contact"
+  ): Promise<void> => {
+    const directory = getSessionDirectory(root, session);
+    const files = (await listReviewFiles(directory, session))
+      .filter(
+        (file) =>
+          selectedForPacket(file, selection) &&
+          !isSensitiveFirstContactFile(file.relativeToSession)
+      )
+      .sort(compareFirstContactFiles);
+    for (const file of files) {
+      if (seen.has(file.absolutePath)) {
+        continue;
+      }
+      seen.add(file.absolutePath);
+      documents.push({
+        absolutePath: file.absolutePath,
+        relativePath: toPortablePath(path.relative(root, file.absolutePath)),
+        source: await readFile(file.absolutePath)
+      });
+    }
+  };
+
+  const startsCourse = first.index === 0;
+
+  if (target.scope === "module") {
+    if (startsCourse) {
+      await addStandalone(path.join(root, "README.md"));
+    }
+    if (target.previous) {
+      await addSessionFiles(target.previous, "context");
+    }
+    await addStandalone(path.join(getModuleDirectory(root, first), "README.md"));
+  } else {
+    if (startsCourse) {
+      await addStandalone(path.join(root, "README.md"));
+    }
+    await addStandalone(path.join(getModuleDirectory(root, first), "README.md"));
+    if (target.previous) {
+      await addSessionFiles(target.previous, "context");
+    }
+  }
+
+  for (const session of target.targetSessions) {
+    await addSessionFiles(session, "first-contact");
+  }
+
+  return documents;
+}
+
+async function renderFirstContactDocuments(
+  root: string,
+  target: ReviewTarget
+): Promise<string> {
+  const documents = await collectFirstContactDocuments(root, target);
+  if (documents.length === 0) {
+    return "(no learner-facing files)";
+  }
+
+  const sections: string[] = [];
+  for (const document of documents) {
+    const heading = `### File: ${document.relativePath}`;
+    if (document.source === null) {
+      sections.push(
+        heading,
+        "",
+        "[missing learner-facing entry file]",
+        "",
+      );
+      continue;
+    }
+    if (
+      isInlineTextFile(document.relativePath) &&
+      document.source.byteLength <= maxInlineBytes
+    ) {
+      sections.push(
+        heading,
+        "",
+        "~~~~",
+        document.source.toString("utf8").trimEnd(),
+        "~~~~",
+        ""
+      );
+    } else {
+      const digest = createHash("sha256")
+        .update(document.source)
+        .digest("hex");
+      sections.push(
+        heading,
+        "",
+        `[not inlined: ${document.source.byteLength} bytes, sha256=${digest}]`,
+        "",
+      );
+    }
+  }
+  return sections.join("\n").trimEnd();
+}
+
+function compareFirstContactFiles(left: ReviewFile, right: ReviewFile): number {
+  const rankDifference =
+    firstContactFileRank(left.relativeToSession) -
+    firstContactFileRank(right.relativeToSession);
+  return rankDifference !== 0
+    ? rankDifference
+    : left.relativeToSession.localeCompare(right.relativeToSession);
+}
+
+function firstContactFileRank(relativePath: string): number {
+  const name = path.posix.basename(relativePath).toLowerCase();
+  const contextOrder = [
+    "readme.md",
+    "task.md",
+    "lab.md",
+    "worksheet.md",
+    "quiz.md"
+  ];
+  const index = contextOrder.indexOf(name);
+  return index >= 0 ? index : contextOrder.length;
+}
+
+function isSensitiveFirstContactFile(relativePath: string): boolean {
+  const name = path.posix.basename(relativePath).toLowerCase();
+  return (
+    name === "quiz.json" ||
+    name === "rubric.md" ||
+    isHiddenAuthorSupportFile(relativePath)
+  );
+}
+
+function isHiddenAuthorSupportFile(relativePath: string): boolean {
+  const portable = relativePath.toLowerCase();
+  const segments = portable.split("/");
+  const name = segments.at(-1) ?? portable;
+  return (
+    segments.some((segment) =>
+      [
+        "answer",
+        "answers",
+        "course-support",
+        "hint",
+        "hints",
+        "reference-solution",
+        "reference-solutions",
+        "solution",
+        "solutions"
+      ].includes(segment)
+    ) ||
+    name.endsWith(".key.json") ||
+    /^(?:answers?|hints?|solutions?)(?:[._-]|$)/.test(name) ||
+    /^reference[._-]?solutions?(?:[._-]|$)/.test(name)
+  );
+}
+
+async function readLearnerFacingLanguage(
+  root: string
+): Promise<{ path: string; source: string }> {
+  const absolutePath = path.join(root, LEARNER_FACING_LANGUAGE_PATH);
+  try {
+    const source = await readFile(absolutePath, "utf8");
+    if (!source.trim()) {
+      throw new Error("файл пуст");
+    }
+    return {
+      path: LEARNER_FACING_LANGUAGE_PATH,
+      source
+    };
+  } catch (error) {
+    throw new Error(
+      `Не удалось прочитать обязательный learner-facing language contract ${absolutePath}: ${formatError(error)}`
+    );
+  }
+}
+
 async function buildBlindPacket(
   root: string,
   target: ReviewTarget,
@@ -483,6 +780,7 @@ async function buildBlindPacket(
     "",
     "## Reviewer contract",
     "",
+    "Открывайте этот пакет только после того, как first-contact разбор по `00-first-contact.md` письменно зафиксирован.",
     "Работайте как учащийся с заявленными входными знаниями. У вас нет истории генерации материала и авторских объяснений.",
     "Сначала письменно зафиксируйте: чему учит материал, причинную модель, порядок примеров, точное задание, ожидаемый evidence, DONE и всё, что осталось неясным.",
     "Отдельно отметьте, можно ли отличить исходный факт, допущение, ожидаемый результат, наблюдение и вывод; для практики проверьте preflight, границы безопасного выполнения, stop conditions и cleanup/rollback.",
@@ -544,8 +842,11 @@ async function buildConsistencyPacket(
     "",
     "## Reviewer contract",
     "",
-    "Открывайте этот пакет только после blind learner-pass. Теперь сопоставьте собственное понимание с manifest, rubric, acceptance tests и соседними карточками.",
+    "Открывайте этот пакет только после письменно зафиксированных first-contact и blind learner-pass. Теперь сопоставьте собственное понимание с manifest, rubric, acceptance tests и соседними карточками.",
     "Проверьте prerequisites, причинные переходы, соответствие README/rubric/checks/evidence, реалистичность 30–60 минут и естественный handoff к следующей теме.",
+    "Проверьте первое впечатление и язык: cold open без контекста у первого материала курса или главы, термины до понятного якоря, резкие переходы и машинную спецификационную прозу. Такой cold open или системно нечитаемый язык — MAJOR; отдельная тяжёлая фраза, не мешающая модели, — MINOR.",
+    "Сверьте отдельно openings курса, module и session с first-contact заметками. Не засчитывайте хороший верхнеуровневый README или позднее объяснение как исправление холодного начала карточки.",
+    "Каждое языковое замечание обязано привести точную цитату, описать эффект для учащегося и назвать тип исправления, не переписывая материал за автора.",
     "Для измерений и лабораторных работ убедитесь, что воспроизводимость, источник данных, допустимая область воздействия, stop conditions и cleanup/rollback описаны, а ожидаемое не выдано за фактически измеренное.",
     "Reviewer остаётся read-only и возвращает отчёт, а не переписывает учебный материал.",
     "",
@@ -560,6 +861,10 @@ async function buildConsistencyPacket(
     "## Canonical course context",
     "",
     await renderCourseContextDocuments(root, target),
+    "",
+    "## Learner-facing language contract",
+    "",
+    (await readLearnerFacingLanguage(root)).source.trimEnd(),
     "",
     "## Module overview",
     "",
@@ -592,6 +897,10 @@ async function buildConsistencyPacket(
     `# Content review: ${target.scope} ${target.id}`,
     "",
     "Verdict: PASS|NEEDS_REWRITE",
+    "",
+    "## First contact and language",
+    "",
+    "Раздельно оцените представленные в `00-first-contact.md` уровни входа по first impression до формальных outcome/scope-разделов. Course opening оценивается только тогда, когда scope note включает корневой README; его намеренное отсутствие у последующей карточки или главы не является finding. Зафиксируйте, где и зачем оказался учащийся, какой знакомый опыт и ведущий вопрос он нашёл; cold open, преждевременный jargon, резкие переходы и машинную прозу. Для каждого finding: точная цитата, learner effect и fix type.",
     "",
     "## Learner reconstruction",
     "",
@@ -848,6 +1157,12 @@ function selectedForPacket(
   if (selection === "context") {
     return file.role === "learner" && isContextFile(file.relativeToSession);
   }
+  if (selection === "first-contact") {
+    return (
+      file.role === "learner" &&
+      !isSensitiveFirstContactFile(file.relativeToSession)
+    );
+  }
   if (selection === "blind") {
     return file.role === "learner";
   }
@@ -999,6 +1314,7 @@ function isNeverIncludedFile(relativePath: string): boolean {
   const name = path.posix.basename(relativePath).toLowerCase();
   return (
     neverIncludedFiles.has(name) ||
+    isHiddenAuthorSupportFile(relativePath) ||
     name === ".env" ||
     (name.startsWith(".env.") && name !== ".env.example") ||
     name === ".npmrc" ||
@@ -1061,13 +1377,14 @@ function validateReport(report: string, verdict: ContentReviewVerdict): void {
     );
   }
   for (const heading of [
+    "## First contact and language",
     "## Learner reconstruction",
     "## Continuity",
     "## Findings",
     "## Evidence and safety",
     "## Verdict rationale"
   ]) {
-    if (!report.includes(heading)) {
+    if (!report.split(/\r?\n/).includes(heading)) {
       throw new Error(`Report не содержит обязательный раздел ${heading}.`);
     }
   }
@@ -1096,4 +1413,8 @@ async function fileExists(target: string): Promise<boolean> {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function formatError(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }

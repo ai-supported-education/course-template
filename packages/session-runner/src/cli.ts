@@ -25,6 +25,7 @@ import {
   publishedCompletionLines
 } from "./publication.js";
 import { buildReviewPacket } from "./review.js";
+import { formatSessionSummary } from "./session-output.js";
 import type { FlatSession, ReviewVerdict } from "./types.js";
 import {
   findWorkspaceRoot,
@@ -227,17 +228,7 @@ function printPublishedCompletion(
 }
 
 function printSession(root: string, session: FlatSession, active: boolean): void {
-  const directory = getSessionDirectory(root, session);
-  console.log(
-    [
-      `${active ? "Активная сессия" : "Следующая сессия"}: ${session.definition.id} — ${session.definition.title}`,
-      `Время: ${session.definition.minutes} минут.`,
-      `Результат: ${session.definition.outcome}`,
-      `DONE: ${session.definition.done}`,
-      `Checks: ${session.definition.checks.join(", ")}.`,
-      `Материалы: ${existsSync(path.join(directory, "README.md")) ? directory : "ещё не реализованы"}`
-    ].join("\n")
-  );
+  console.log(formatSessionSummary(root, session, active));
 }
 
 function printCheckRun(run: Awaited<ReturnType<typeof runSessionChecks>>): void {

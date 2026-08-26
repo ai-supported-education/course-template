@@ -2,6 +2,7 @@
 
 import path from "node:path";
 import {
+  formatPreparedContentReview,
   getContentReviewStatus,
   parseContentReviewScope,
   parseContentReviewVerdict,
@@ -72,15 +73,7 @@ async function main(): Promise<void> {
   const scope = parseContentReviewScope(args[0] ?? "");
   const id = requireId(args[1]);
   const prepared = await prepareContentReview(root, scope, id);
-  console.log(
-    [
-      `Content review packet готов для ${scope} ${id}.`,
-      `Hash: ${prepared.contentHash}.`,
-      `Blind pass: ${prepared.blindPacketPath}.`,
-      `Consistency pass: ${prepared.consistencyPacketPath}.`,
-      "Запустите отдельного subagent с fork_turns=none. Он должен сначала прочитать blind packet, зафиксировать выводы и только затем открыть consistency packet."
-    ].join("\n")
-  );
+  console.log(formatPreparedContentReview(prepared));
 }
 
 function requireId(value: string | undefined): string {

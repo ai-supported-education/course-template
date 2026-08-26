@@ -61,10 +61,11 @@ GitHub переносит из template только default branch, поэто�
     pnpm author:content-review module 01
 
 Родительский Codex запускает нового subagent без истории генерации. Reviewer
-сначала читает blind learner packet, затем проверяет связность с profiles, rubric,
-checks/evidence и соседними карточками. CLI сам агента не запускает; полный verdict
-и report хранятся локально в `.authoring/`, а команда `attest` публикует компактное
-hash-свидетельство. Подробнее — в
+сначала читает first-contact маршрут и фиксирует качество входа и языка, затем
+восстанавливает модель по blind packet и только после этого проверяет связность с
+profiles, rubric, checks/evidence и соседними карточками. CLI сам агента не
+запускает; полный verdict и report хранятся локально в `.authoring/`, а команда
+`attest` публикует компактное hash-свидетельство. Подробнее — в
 [content-review protocol](curriculum/content-review-protocol.md).
 
 ## Стековые правила
