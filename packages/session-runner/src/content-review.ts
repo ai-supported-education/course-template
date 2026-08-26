@@ -29,7 +29,7 @@ import { getModuleDirectory, getSessionDirectory } from "./workspace.js";
 export const CONTENT_REVIEW_VERDICTS = ["PASS", "NEEDS_REWRITE"] as const;
 export const CONTENT_REVIEW_STAGES = ["novice", "consistency"] as const;
 export const CONTENT_REVIEW_PROTOCOL =
-  "novice-walkthrough-consistency-v6" as const;
+  "novice-walkthrough-consistency-v8" as const;
 export const CONTENT_REVIEW_OPENING_MARKER =
   "<!-- content-review:opening:end -->" as const;
 export const LEARNER_FACING_LANGUAGE_PATH =
@@ -620,7 +620,9 @@ async function buildNovicePacket(
     "Не достраивайте пропуски из собственных экспертных знаний. Если смысл можно восстановить только потому, что вы уже знаете предмет или API, это finding, а не доказательство понятности.",
     "Построчно проверьте указательные ссылки (`такой`, `этот`, `похожий`, `здесь` и аналогичные): назовите точный antecedent, который уже появился до ссылки. Если его нет или вариантов несколько, зафиксируйте разрыв.",
     "Составьте список каждого центрального identifier, API, команды и термина в порядке первого появления. Для каждого укажите место, где до использования объяснены его роль и происхождение. Простого узнавания имени reviewer недостаточно.",
-    "Для каждого ведущего примера восстановите начальное состояние, событие или действие и наблюдаемый результат. Если хотя бы одно звено отсутствует, учащийся не может проверить причинную связь по opening.",
+    "Для каждого конкретного примера, который доказывает причинное утверждение или впервые показывает новый API, восстановите начальное состояние, событие или действие и наблюдаемый результат. Если хотя бы одно звено отсутствует, учащийся не может проверить эту причинную связь по opening. Анонс будущих примеров или пункт маршрута не обязан содержать всю цепочку и не считается ведущим примером сам по себе.",
+    "Opening курса и module могут быть уже прочитанным контекстом для последующей session. Используйте их как доступные antecedents, но не требуйте, чтобы preview главы заново доказывал каждый пример текущей карточки. Текущую session всё равно проверяйте без скидки на поздний текст.",
+    "В module packet после opening каждой опубликованной session показан компактный learner-visible результат, который становится доступен только после завершения этой session. Используйте его как контекст для следующей карточки, но не исправляйте им opening той же карточки задним числом.",
     "Позднее объяснение не исправляет opening задним числом. Центральный identifier/API, использованный без доступного введения и необходимый для понимания ведущего примера, — MAJOR и требует NEEDS_REWRITE.",
     "Сначала верните отдельный first-contact checkpoint. Не выносите итоговый verdict по всему материалу: вы ещё не видели его полностью. Родитель должен сохранить checkpoint до следующей фазы.",
     "Не открывайте `01-blind.md`, пока родитель не вернётся отдельным follow-up после сохранения checkpoint. Не открывайте `02-consistency.md`, repository files, profiles, rubric, hints или solution. Не меняйте файлы.",
@@ -629,9 +631,9 @@ async function buildNovicePacket(
     "",
     renderNoviceBaseline(target),
     "",
-    "## Previous learner-visible result",
+    "## Prior learner-visible results",
     "",
-    renderPreviousLearnerSummary(target),
+    renderPriorLearnerSummaries(target),
     "",
     "## Opening excerpts",
     "",
@@ -670,12 +672,14 @@ async function buildNovicePacket(
 function describeNoviceCoverage(target: ReviewTarget): string {
   const startsCourse = targetStartsCourse(target);
   if (startsCourse) {
-    return "Scope note: это начало курса, поэтому packet показывает openings курса, module и проверяемых sessions. Оцените каждый уровень отдельно.";
+    return target.scope === "module"
+      ? "Scope note: это начало курса, поэтому packet показывает openings курса, module и опубликованных sessions в порядке прохождения. После opening каждой session следует только её компактный результат, доступный следующей карточке. Оцените каждый opening до чтения результата этой же session."
+      : "Scope note: это начало курса, поэтому packet показывает openings курса, module и проверяемой session. Оцените каждый уровень отдельно.";
   }
   if (target.scope === "module") {
-    return "Scope note: это последующая глава. Packet показывает learner-visible итог предыдущей карточки, opening module и openings его published sessions. Корневой README намеренно отсутствует.";
+    return "Scope note: это последующая глава. Packet сначала показывает learner-visible результаты всех предыдущих published-карточек, затем opening module и опубликованные sessions в порядке прохождения. После opening каждой session следует только её компактный результат, доступный следующей карточке. Корневой README намеренно отсутствует.";
   }
-  return "Scope note: это последующая карточка. Packet показывает learner-visible итог предыдущей карточки, opening её module и opening текущей session. Корневой README намеренно отсутствует.";
+  return "Scope note: это последующая карточка. Packet показывает learner-visible результаты всех предыдущих published-карточек, opening её module и opening текущей session. Корневой README намеренно отсутствует.";
 }
 
 function renderNoviceBaseline(target: ReviewTarget): string {
@@ -724,15 +728,23 @@ async function renderCourseOverview(
   ].join("\n");
 }
 
-function renderPreviousLearnerSummary(target: ReviewTarget): string {
-  if (!target.previous) {
+function renderPriorLearnerSummaries(target: ReviewTarget): string {
+  const first = target.targetSessions[0];
+  const priorSessions = first
+    ? target.sessions.filter((session) => session.index < first.index)
+    : [];
+  if (priorSessions.length === 0) {
     return "Это первый материал курса; предыдущего результата нет.";
   }
-  return [
-    `Title: ${target.previous.definition.title}`,
-    `Outcome: ${target.previous.definition.outcome}`,
-    `DONE: ${target.previous.definition.done}`
-  ].join("\n");
+  return priorSessions
+    .map((session) =>
+      [
+        `### ${session.definition.id}. ${session.definition.title}`,
+        `Outcome: ${session.definition.outcome}`,
+        `DONE: ${session.definition.done}`
+      ].join("\n")
+    )
+    .join("\n\n");
 }
 
 async function collectNoviceOpeningDocuments(
@@ -810,6 +822,24 @@ async function renderNoviceOpeningDocuments(
   for (const document of documents) {
     const heading = `### File: ${document.relativePath}`;
     sections.push(heading, "", "~~~~", document.opening, "~~~~", "");
+    if (target.scope === "module") {
+      const session = target.targetSessions.find(
+        (candidate) =>
+          path.join(getSessionDirectory(root, candidate), "README.md") ===
+          document.absolutePath
+      );
+      if (session) {
+        sections.push(
+          `### Learner-visible result after ${session.definition.id}`,
+          "",
+          "Этот результат становится доступен после завершения карточки. Не используйте его, чтобы ретроспективно смягчить findings её opening.",
+          "",
+          `Outcome: ${session.definition.outcome}`,
+          `DONE: ${session.definition.done}`,
+          ""
+        );
+      }
+    }
   }
   return sections.join("\n").trimEnd();
 }
@@ -879,6 +909,10 @@ async function buildBlindPacket(
     "## Declared learner baseline",
     "",
     renderNoviceBaseline(target),
+    "",
+    "## Prior learner-visible results",
+    "",
+    renderPriorLearnerSummaries(target),
     "",
     "## Course overview",
     "",

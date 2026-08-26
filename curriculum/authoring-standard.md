@@ -214,4 +214,12 @@ previous outcome недостаточно для проверки транзит
 и требует двух новых reviewers. После двойного session PASS всех карточек нужен
 такой же двойной module PASS.
 
+Novice packet последующей карточки перечисляет learner-visible outcomes и DONE
+всех уже пройденных published-сессий. При module review packet воспроизводит
+реальный порядок: opening карточки, затем доступный после её завершения outcome и
+DONE, затем opening следующей карточки. Результат нельзя использовать для
+ретроспективного исправления opening той же session. Требование `initial state → action →
+observation` относится к конкретному примеру, который вводит API или доказывает
+причинное утверждение; roadmap-preview не считается таким примером автоматически.
+
 Полный протокол: [content-review-protocol.md](content-review-protocol.md).

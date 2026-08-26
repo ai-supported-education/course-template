@@ -1,6 +1,6 @@
 # Независимый content-review учебного материала
 
-Protocol id: `novice-walkthrough-consistency-v6`.
+Protocol id: `novice-walkthrough-consistency-v8`.
 
 ## Зачем нужны два reviewer
 
@@ -57,8 +57,11 @@ review автор переводит готовую карточку в `publish
 фазами:
 
 - `00-novice.md` — первая фаза novice-review: заявленная стартовая точка
-  аудитории, learner-visible `outcome`/`done` предыдущей карточки для later session
-  и только opening prefixes применимых README до
+  аудитории, learner-visible `outcome`/`done` всех предыдущих published-карточек
+  для later session и последовательность `opening session → её компактный
+  learner-visible результат` для module review; результат одной карточки можно
+  использовать только при чтении следующих openings. Сам packet содержит только
+  opening prefixes применимых README до
   `<!-- content-review:opening:end -->`;
 - `01-blind.md` — полные learner-facing файлы карточки, безопасный контекст
   аудитории и материалы, необходимые для восстановления outcome, модели, примеров,
@@ -81,13 +84,19 @@ session. Этот README входит в content hash зависимой про�
 
 Для первой опубликованной карточки курса novice packet включает opening корневого
 README, первого module и карточки. Для later session вместо повторного корневого
-README runner добавляет learner-visible результат предыдущей карточки, затем
-opening module и текущей карточки. Отдельный handoff marker не нужен. Scope note в
-packet точно перечисляет включённые уровни.
+README runner добавляет компактные learner-visible результаты всех уже пройденных
+published-карточек, затем opening module и текущей карточки. Так fresh reviewer
+получает ту же учебную историю, на которую вправе опираться реальный учащийся, но
+не видит поздние объяснения текущего материала. Отдельный handoff marker не нужен.
+Scope note в packet точно перечисляет включённые уровни.
 
 Для module review первая опубликованная глава начинается с course opening; более
-поздняя — с результата предыдущей карточки. Далее следуют opening текущего module и
-его published sessions. Каждый README всё равно обрывается на собственном marker.
+поздняя — с результатов всех предыдущих published-карточек. Далее следуют opening
+текущего module и его published sessions в реальном порядке прохождения. После
+opening каждой session packet показывает её компактные `outcome` и `DONE`: они
+становятся контекстом для следующей карточки, но не позволяют ретроспективно
+смягчить finding текущего opening. Каждый README всё равно обрывается на
+собственном marker.
 
 Consistency-review первой карточки и первого module получает не только обрезанный
 opening в отдельном novice packet, но и полный корневой README в обеих своих
@@ -129,8 +138,9 @@ answers, solutions, secrets и traversal paths отклоняются validator-
    точный уже прочитанный antecedent. Сами слова не запрещены.
 3. Для каждого центрального identifier и API первого code block — строку, где имя
    объявлено либо роль объяснена до использования.
-4. Есть ли у первого примера нового API исходное состояние, событие или действие,
-   роли значимых имён и наблюдаемый результат.
+4. Есть ли у первого объясняющего примера нового API исходное состояние, событие
+   или действие, роли значимых имён и наблюдаемый результат. Анонс будущего
+   примера или пункт маршрута не считается таким примером сам по себе.
 5. Какие места удалось понять только благодаря собственным знаниям агента, а не
    заявленным prerequisites и opening.
 
@@ -245,12 +255,12 @@ courseContextFiles или активных profile documents делает обе
     pnpm author:content-review attest session 01-01
 
 Публичный JSON использует `schemaVersion: 2` и
-`protocol: "novice-walkthrough-consistency-v6"`. В объекте `reviews` находятся
+`protocol: "novice-walkthrough-consistency-v8"`. В объекте `reviews` находятся
 отдельные `novice` и `consistency`; для каждой проверки публикуются verdict, время
 review и SHA-256 соответствующего локального отчёта. Общий content hash остаётся
 на уровне attestation. Raw reports и packets остаются в `.authoring/`.
 
-Attestation v1 и protocol до v6 не удовлетворяют v6 и автоматически считаются
+Attestation v1 и protocol до v8 не удовлетворяют v8 и автоматически считаются
 устаревшими; старый одиночный PASS или novice PASS только по opening не мигрируется
 в новый stage. После двойного PASS всех опубликованных карточек module проходит
 такую же пару review и получает schema v2 attestation. Только актуальные двойные

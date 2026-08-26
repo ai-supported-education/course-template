@@ -33,7 +33,7 @@ describe("author content review", () => {
 
     expect(novice).toContain("Audience: Test learner");
     expect(novice).toContain("Assumed concepts: (none)");
-    expect(novice).toContain("Title: Previous");
+    expect(novice).toContain("### 01-01. Previous");
     expect(novice).toContain("Outcome: Previous outcome");
     expect(novice).toContain("DONE: Previous done");
     expect(novice).toContain("Module learning arc");
@@ -52,7 +52,8 @@ describe("author content review", () => {
     expect(novice).toContain("каждого центрального identifier, API");
     expect(novice).toContain("начальное состояние, событие или действие");
     expect(novice).toContain("не исправляет opening задним числом");
-    expect(novice).toContain("необходимый для понимания ведущего примера, — MAJOR");
+    expect(novice).toContain("Анонс будущих примеров");
+    expect(novice).toContain("уже прочитанным контекстом");
     expect(novice).toContain("## Reference audit");
     expect(novice).toContain("## Identifier and API audit");
     expect(novice).toContain("Checkpoint: CLEAR|REWRITE");
@@ -151,6 +152,22 @@ describe("author content review", () => {
     expect(after.contentHash).not.toBe(before.contentHash);
   });
 
+  it("shows every completed learner-visible result before a later session", async () => {
+    const root = await createWorkspace();
+    const prepared = await prepareContentReview(root, "session", "01-03");
+    const novice = await readFile(prepared.novicePacketPath, "utf8");
+    const blind = await readFile(prepared.blindPacketPath, "utf8");
+
+    for (const packet of [novice, blind]) {
+      expect(packet).toContain("### 01-01. Previous");
+      expect(packet).toContain("Outcome: Previous outcome");
+      expect(packet).toContain("### 01-02. Current");
+      expect(packet).toContain("Outcome: Current outcome");
+    }
+    expect(novice).not.toContain("Previous late explanation");
+    expect(novice).not.toContain("Current late explanation");
+  });
+
   it("shows only root, module and target openings for the first course session", async () => {
     const root = await createWorkspace();
     const prepared = await prepareContentReview(root, "session", "01-01");
@@ -219,10 +236,10 @@ describe("author content review", () => {
     const packet = await readFile(prepared.novicePacketPath, "utf8");
 
     expect(packet).not.toContain("Root learner welcome");
-    expect(packet).toContain("Title: Next");
+    expect(packet).toContain("### 01-03. Next");
     expect(packet).toContain("Outcome: Next outcome");
     expect(packet).not.toContain("Next explanation");
-    expect(packet.indexOf("Title: Next")).toBeLessThan(
+    expect(packet.indexOf("### 01-03. Next")).toBeLessThan(
       packet.indexOf("Second module entry")
     );
     expect(packet.indexOf("Second module entry")).toBeLessThan(
@@ -240,12 +257,30 @@ describe("author content review", () => {
     expect(firstPacket).toContain("Previous explanation");
     expect(firstPacket).toContain("Current explanation");
     expect(firstPacket).toContain("Next explanation");
+    expect(firstPacket).toContain("### Learner-visible result after 01-01");
+    expect(firstPacket).toContain("### Learner-visible result after 01-02");
+    expect(firstPacket).toContain("### Learner-visible result after 01-03");
+    expect(firstPacket.indexOf("Previous explanation")).toBeLessThan(
+      firstPacket.indexOf("### Learner-visible result after 01-01")
+    );
+    expect(firstPacket.indexOf("### Learner-visible result after 01-01")).toBeLessThan(
+      firstPacket.indexOf("Current explanation")
+    );
+    expect(firstPacket.indexOf("Current explanation")).toBeLessThan(
+      firstPacket.indexOf("### Learner-visible result after 01-02")
+    );
+    expect(firstPacket.indexOf("### Learner-visible result after 01-02")).toBeLessThan(
+      firstPacket.indexOf("Next explanation")
+    );
+    expect(firstPacket).not.toContain("Previous late explanation");
+    expect(firstPacket).not.toContain("Current late explanation");
+    expect(firstPacket).not.toContain("Next late explanation");
 
     const laterRoot = await createTwoModuleWorkspace();
     const laterPrepared = await prepareContentReview(laterRoot, "module", "02");
     const laterPacket = await readFile(laterPrepared.novicePacketPath, "utf8");
     expect(laterPacket).not.toContain("Root learner welcome");
-    expect(laterPacket.indexOf("Title: Next")).toBeLessThan(
+    expect(laterPacket.indexOf("### 01-03. Next")).toBeLessThan(
       laterPacket.indexOf("Second module entry")
     );
     expect(laterPacket.indexOf("Second module entry")).toBeLessThan(

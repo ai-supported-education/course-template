@@ -38,8 +38,9 @@ packets и records находятся в игнорируемой `.authoring/`.
 Все published course/module/session README содержат ровно один marker
 `<!-- content-review:opening:end -->`. `00-novice.md` физически включает только
 prefix до marker. Для начала курса полный корневой README входит также в
-`01-blind.md` и `02-consistency.md`; later targets его не повторяют. Protocol id
-— `novice-walkthrough-consistency-v6`. `02-consistency.md` также содержит
+`01-blind.md` и `02-consistency.md`; later targets его не повторяют, но получают
+краткие outcomes и DONE всех уже пройденных published-карточек. Protocol id
+— `novice-walkthrough-consistency-v8`. `02-consistency.md` также содержит
 provenance всех prerequisites и полные learner README более ранних source sessions;
 изменение такого source входит в hash зависимого review. `01-blind.md` содержит
 полный learner-facing маршрут и используется обеими ролями независимо: novice —

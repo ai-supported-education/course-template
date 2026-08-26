@@ -190,8 +190,12 @@ pnpm author:content-review session <id>
 
 Запустите novice-subagent с `fork_turns="none"` и передайте ему только путь к
 `00-novice.md`. Он построчно проверяет opening prefixes, antecedents, identifiers и
-полноту первого примера, затем возвращает не финальный verdict, а first-contact
-checkpoint `CLEAR|REWRITE`. Сохраните его отдельным файлом. При `REWRITE`
+полноту первого объясняющего примера, затем возвращает не финальный verdict, а
+first-contact checkpoint `CLEAR|REWRITE`. Для later session packet перечисляет
+outcomes и DONE всех уже пройденных published-карточек. В module review они
+появляются между openings в реальном порядке прохождения: результат завершённой
+карточки доступен следующей, но не исправляет её собственный opening задним числом.
+Roadmap-preview при этом не считается исполнимым примером нового API. Сохраните checkpoint отдельным файлом. При `REWRITE`
 исправьте материал и начните весь review заново. При `CLEAR` продолжите тот же
 диалог и передайте агенту только `01-blind.md`: теперь он читает весь
 learner-facing маршрут, проверяет объяснения, примеры, задание, evidence, DONE и
