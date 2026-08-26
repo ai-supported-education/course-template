@@ -88,16 +88,19 @@ acceptance test обязан:
 обязательный independent content-review двумя независимыми агентами:
 
 1. Соберите packet через `pnpm author:content-review session <id>`.
-2. Запустите novice-subagent с `fork_turns="none"`. Передайте только путь к
-   `00-novice.md`; агент не открывает repository или другие packets. Он проверяет
-   opening построчно, включая antecedents, identifiers, исходное состояние, событие
-   и наблюдение.
-3. Независимо запустите consistency-subagent с `fork_turns="none"`. Передайте
-   только пути к `01-blind.md` и `02-consistency.md`: сначала агент читает 01 и
-   восстанавливает материал, затем открывает 02 и проверяет rubric, tests,
-   evidence, profiles и соседние карточки. Для prerequisites он использует
-   provenance-карту и learner sources из 02, а не предполагает, что любой concept
-   обязан быть введён непосредственно в предыдущей карточке.
+2. Запустите novice-subagent с `fork_turns="none"`. Сначала передайте только путь
+   к `00-novice.md`; агент не открывает repository или другие packets и возвращает
+   отдельный first-contact checkpoint по opening. Физически сохраните checkpoint.
+   Только при `CLEAR` продолжите тот же диалог и передайте агенту `01-blind.md`:
+   теперь он проходит весь learner-facing материал до DONE и возвращает итоговый
+   `PASS` или `NEEDS_REWRITE`. Поздний текст не позволяет смягчить уже сохранённые
+   first-contact findings.
+3. Независимо запустите consistency-subagent с `fork_turns="none"`. Он не получает
+   novice checkpoint или report. Передайте ему `01-blind.md`, дождитесь письменной
+   реконструкции материала и только затем откройте `02-consistency.md` для сверки
+   rubric, tests, evidence, profiles и соседних карточек. Для prerequisites он
+   использует provenance-карту и learner sources из 02, а не предполагает, что
+   любой concept обязан быть введён непосредственно в предыдущей карточке.
 4. Не передавайте агентам историю генерации, авторские рассуждения, hints,
    solution или отчёт другого reviewer. Quiz key может находиться только в
    `02-consistency.md` как acceptance evidence. Оба reviewer работают read-only и
@@ -106,8 +109,10 @@ acceptance test обязан:
    `pnpm author:content-review --record novice <session|module> <id> PASS|NEEDS_REWRITE --report <path>`
    и
    `pnpm author:content-review --record consistency <session|module> <id> PASS|NEEDS_REWRITE --report <path>`.
-6. После исправлений повторите обе проверки двумя новыми fresh subagents. Позднее
-   объяснение не понижает finding неизвестного центрального identifier во opening.
+6. После исправлений повторите обе проверки двумя новыми fresh subagents. Нельзя
+   продолжать прежний novice checkpoint или прежний consistency reconstruction.
+   Позднее объяснение не понижает finding неизвестного центрального identifier во
+   opening.
 
 После двойного session PASS всех карточек выполните
 `pnpm author:content-review module <id>` и получите два независимых module PASS.

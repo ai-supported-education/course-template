@@ -29,7 +29,7 @@ import { getModuleDirectory, getSessionDirectory } from "./workspace.js";
 export const CONTENT_REVIEW_VERDICTS = ["PASS", "NEEDS_REWRITE"] as const;
 export const CONTENT_REVIEW_STAGES = ["novice", "consistency"] as const;
 export const CONTENT_REVIEW_PROTOCOL =
-  "novice-first-contact-consistency-v5" as const;
+  "novice-walkthrough-consistency-v6" as const;
 export const CONTENT_REVIEW_OPENING_MARKER =
   "<!-- content-review:opening:end -->" as const;
 export const LEARNER_FACING_LANGUAGE_PATH =
@@ -398,11 +398,12 @@ export function formatPreparedContentReview(
     `Content review packet готов для ${prepared.scope} ${prepared.id}.`,
     `Hash: ${prepared.contentHash}.`,
     `Novice packet: ${prepared.novicePacketPath}.`,
-    `Consistency blind packet: ${prepared.blindPacketPath}.`,
+    `Blind learner packet: ${prepared.blindPacketPath}.`,
     `Consistency evidence packet: ${prepared.consistencyPacketPath}.`,
     "Запустите ДВУХ независимых fresh subagents с fork_turns=none.",
-    "1. Novice-agent получает и читает только 00-novice.md; не передавайте ему 01, 02, профили, rubric, авторские рассуждения или поздний текст.",
-    "2. Другой consistency-agent не получает novice report. Он читает только 01-blind.md, фиксирует reconstruction, затем открывает 02-consistency.md.",
+    "1. Novice-agent сначала получает только 00-novice.md и возвращает first-contact checkpoint. Сохраните checkpoint до продолжения.",
+    "2. Если checkpoint CLEAR, тому же novice-agent отдельным follow-up передайте только 01-blind.md. Он проходит весь learner-facing материал и возвращает итоговый novice report; 02 ему не показывайте.",
+    "3. Другой consistency-agent не получает novice packets или reports. Он независимо читает 01-blind.md, письменно фиксирует reconstruction, затем открывает 02-consistency.md.",
     `Запись novice: pnpm author:content-review --record novice ${prepared.scope} ${prepared.id} PASS|NEEDS_REWRITE --report <path>.`,
     `Запись consistency: pnpm author:content-review --record consistency ${prepared.scope} ${prepared.id} PASS|NEEDS_REWRITE --report <path>.`
   ].join("\n");
@@ -610,18 +611,19 @@ async function buildNovicePacket(
   target: ReviewTarget
 ): Promise<string> {
   const sections = [
-    "# Novice first-contact pass",
+    "# Novice phase 1: sealed first contact",
     "",
     "## Reviewer contract",
     "",
-    "Вы — fresh reviewer без истории генерации и с ровно теми входными знаниями, которые объявлены ниже. Вам физически показаны только вступления learner README до author marker; поздний текст намеренно отсутствует.",
+    "Вы — fresh reviewer без истории генерации и с ровно теми входными знаниями, которые объявлены ниже. Это первая из двух фаз novice-review. Вам физически показаны только вступления learner README до author marker; поздний текст намеренно отсутствует.",
     describeNoviceCoverage(target),
     "Не достраивайте пропуски из собственных экспертных знаний. Если смысл можно восстановить только потому, что вы уже знаете предмет или API, это finding, а не доказательство понятности.",
     "Построчно проверьте указательные ссылки (`такой`, `этот`, `похожий`, `здесь` и аналогичные): назовите точный antecedent, который уже появился до ссылки. Если его нет или вариантов несколько, зафиксируйте разрыв.",
     "Составьте список каждого центрального identifier, API, команды и термина в порядке первого появления. Для каждого укажите место, где до использования объяснены его роль и происхождение. Простого узнавания имени reviewer недостаточно.",
     "Для каждого ведущего примера восстановите начальное состояние, событие или действие и наблюдаемый результат. Если хотя бы одно звено отсутствует, учащийся не может проверить причинную связь по opening.",
     "Позднее объяснение не исправляет opening задним числом. Центральный identifier/API, использованный без доступного введения и необходимый для понимания ведущего примера, — MAJOR и требует NEEDS_REWRITE.",
-    "Не открывайте `01-blind.md`, `02-consistency.md`, repository files, profiles, rubric, hints или solution. Не меняйте файлы.",
+    "Сначала верните отдельный first-contact checkpoint. Не выносите итоговый verdict по всему материалу: вы ещё не видели его полностью. Родитель должен сохранить checkpoint до следующей фазы.",
+    "Не открывайте `01-blind.md`, пока родитель не вернётся отдельным follow-up после сохранения checkpoint. Не открывайте `02-consistency.md`, repository files, profiles, rubric, hints или solution. Не меняйте файлы.",
     "",
     "## Declared learner baseline",
     "",
@@ -635,11 +637,11 @@ async function buildNovicePacket(
     "",
     await renderNoviceOpeningDocuments(root, target),
     "",
-    "## Required report format",
+    "## Required checkpoint format",
     "",
-    `# Novice content review: ${target.scope} ${target.id}`,
+    `# Novice first-contact checkpoint: ${target.scope} ${target.id}`,
     "",
-    "Verdict: PASS|NEEDS_REWRITE",
+    "Checkpoint: CLEAR|REWRITE",
     "",
     "## Opening reconstruction",
     "",
@@ -657,9 +659,9 @@ async function buildNovicePacket(
     "",
     "Каждый finding: severity BLOCKER|MAJOR|MINOR, точная цитата, learner effect и требуемый тип исправления. Не дописывайте материал за автора.",
     "",
-    "## Verdict rationale",
+    "## Checkpoint rationale",
     "",
-    "PASS допустим только без открытых BLOCKER и MAJOR; неизвестный центральный identifier/API является MAJOR."
+    "CLEAR допустим только без открытых BLOCKER и MAJOR; неизвестный центральный identifier/API является MAJOR. При CLEAR ожидайте отдельный learner packet и продолжайте в том же диалоге, не пересматривая first-contact задним числом."
   ];
 
   return ensureTrailingNewline(sections.join("\n"));
@@ -862,17 +864,17 @@ async function buildBlindPacket(
   contentHash: string
 ): Promise<string> {
   const sections = [
-    "# Consistency reviewer: blind learner pass",
+    "# Blind learner-facing material",
     "",
     metadataBlock(target, contentHash),
     "",
     "## Reviewer contract",
     "",
-    "Это первый packet независимого consistency-reviewer. У вас нет истории генерации, novice report, авторских объяснений или findings другого агента.",
-    "Работайте как учащийся с заявленными входными знаниями. Не открывайте `00-novice.md`: novice-review выполняет другой fresh agent.",
-    "Сначала письменно зафиксируйте: чему учит материал, причинную модель, порядок примеров, точное задание, ожидаемый evidence, DONE и всё, что осталось неясным.",
-    "Отдельно отметьте, можно ли отличить исходный факт, допущение, ожидаемый результат, наблюдение и вывод; для практики проверьте preflight, границы безопасного выполнения, stop conditions и cleanup/rollback.",
-    "Не открывайте `02-consistency.md`, пока этот blind-разбор не сформулирован. Не изменяйте файлы и не ищите course-support, hints, quiz keys, solutions или novice report.",
+    "Packet содержит полный learner-facing маршрут без rubric, acceptance intent, profiles и авторских объяснений. Его независимо читают novice-reviewer во второй фазе и consistency-reviewer в первой; отчёты друг друга они не получают.",
+    "Если вы novice-reviewer, открывайте этот packet только после собственного сохранённого first-contact checkpoint и отдельного follow-up родителя. Пройдите материал сверху вниз как учащийся: проверьте каждое объяснение, пример, переход, задание, evidence и DONE. Не улучшайте выводы first-contact благодаря позднему тексту; перенесите их в итоговый report без ретроспективного смягчения. Не открывайте `02-consistency.md`.",
+    "Если вы consistency-reviewer, это ваша первая фаза. Вы не читаете `00-novice.md`, checkpoint или итоговый novice report. До открытия `02-consistency.md` письменно восстановите outcome, причинную модель, порядок примеров, точное задание, ожидаемый evidence, DONE и всё, что осталось неясным.",
+    "Для обеих ролей: работайте как учащийся с заявленными входными знаниями. Отметьте неизвестные термины, скрытые переходы и места, понятные только из собственных экспертных знаний. Различайте исходный факт, допущение, ожидаемый результат, наблюдение и вывод; для практики проверьте preflight, безопасный scope, stop conditions и cleanup/rollback.",
+    "Не изменяйте файлы и не ищите repository, course-support, hints, quiz keys или solutions.",
     "",
     "## Declared learner baseline",
     "",
@@ -913,6 +915,53 @@ async function buildBlindPacket(
       : target.nextRoadmap
         ? renderLearnerVisibleRoadmapSummary(target.nextRoadmap)
         : "Это последний шаг курса."
+  );
+
+  sections.push(
+    "",
+    "## Novice phase 2: required final report format",
+    "",
+    "Этот формат использует только novice-reviewer после полного прохода. Consistency-reviewer пропускает его и получает собственный формат в `02-consistency.md`.",
+    "",
+    `# Novice content review: ${target.scope} ${target.id}`,
+    "",
+    "Verdict: PASS|NEEDS_REWRITE",
+    "",
+    "## Opening reconstruction",
+    "",
+    "Сохранённый вывод first-contact: стартовая ситуация, затруднение, ведущий вопрос и initial state → event/action → observation. Поздний текст не переписывает этот вывод.",
+    "",
+    "## Reference audit",
+    "",
+    "Результат sealed first-contact для указательных ссылок и antecedents.",
+    "",
+    "## Identifier and API audit",
+    "",
+    "Результат sealed first-contact для центральных identifier/API и мест их введения.",
+    "",
+    "## Learner walkthrough",
+    "",
+    "Что учащийся последовательно понимает от opening до DONE; где причинная цепочка или терминология требует догадки.",
+    "",
+    "## Explanation and examples",
+    "",
+    "Достаточность кода, исходных значений, действий, наблюдений, границ аналогий и связи каждого примера с объясняемой моделью.",
+    "",
+    "## Task, evidence and DONE",
+    "",
+    "Можно ли выполнить задание и доказать DONE только по learner-facing материалу, не открывая rubric, tests, hints или следующую карточку.",
+    "",
+    "## Continuity",
+    "",
+    "Связь с доступным предыдущим результатом, заявленными prerequisites и следующим learner-visible contract без скрытого авторского контекста.",
+    "",
+    "## Findings",
+    "",
+    "Каждый finding: severity BLOCKER|MAJOR|MINOR, точная цитата, learner effect и требуемый тип исправления. Не дописывайте материал за автора.",
+    "",
+    "## Verdict rationale",
+    "",
+    "PASS допустим только без открытых BLOCKER и MAJOR во first-contact и полном learner walkthrough."
   );
 
   return ensureTrailingNewline(sections.join("\n"));
@@ -1595,6 +1644,10 @@ function validateReport(
           "## Opening reconstruction",
           "## Reference audit",
           "## Identifier and API audit",
+          "## Learner walkthrough",
+          "## Explanation and examples",
+          "## Task, evidence and DONE",
+          "## Continuity",
           "## Findings",
           "## Verdict rationale"
         ]

@@ -28,18 +28,23 @@ Author-side команды не используют learner progress:
   schema v2 с двумя актуальными PASS в `curriculum/reviews/`.
 
 CLI не запускает агентов. Родительский Codex создаёт двух fresh subagents по
-правилам `AGENTS.md`: novice получает только `00-novice.md`, consistency — только
-`01-blind.md`, затем `02-consistency.md`. Они не получают отчёты друг друга.
-Локальные packets и records находятся в игнорируемой `.authoring/`.
+правилам `AGENTS.md`. Novice сначала получает только `00-novice.md`; после
+физически сохранённого first-contact checkpoint тот же агент отдельным follow-up
+получает `01-blind.md` и проверяет весь learner-facing материал. Независимый
+consistency-agent не видит novice checkpoint/report: он читает `01-blind.md`,
+фиксирует reconstruction и только затем получает `02-consistency.md`. Локальные
+packets и records находятся в игнорируемой `.authoring/`.
 
 Все published course/module/session README содержат ровно один marker
 `<!-- content-review:opening:end -->`. `00-novice.md` физически включает только
 prefix до marker. Для начала курса полный корневой README входит также в
 `01-blind.md` и `02-consistency.md`; later targets его не повторяют. Protocol id
-— `novice-first-contact-consistency-v5`. `02-consistency.md` также содержит
+— `novice-walkthrough-consistency-v6`. `02-consistency.md` также содержит
 provenance всех prerequisites и полные learner README более ранних source sessions;
-изменение такого source входит в hash зависимого review. Записи прежних protocol не
-считаются актуальными.
+изменение такого source входит в hash зависимого review. `01-blind.md` содержит
+полный learner-facing маршрут и используется обеими ролями независимо: novice —
+после sealed opening, consistency — до авторского evidence. Записи прежних protocol
+не считаются актуальными.
 
 ## Добавление нового check
 

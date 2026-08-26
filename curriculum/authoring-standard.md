@@ -200,13 +200,16 @@ Rubric разделяет:
 
 Каждая новая или существенно изменённая карточка затем проходит две независимые
 author-side проверки fresh subagents без истории генерации и без обмена отчётами.
-Novice-reviewer получает только `00-novice.md`, физически оборванный на opening
-markers, и проверяет линейную понятность. Consistency-reviewer получает только
-`01-blind.md`, затем `02-consistency.md`: сначала восстанавливает модель и задание,
-после этого сверяет profile contracts, concept graph, rubric, checks, evidence и
-соседние карточки. Consistency packet содержит provenance каждого prerequisite и
-полный learner README той published session, которая впервые ввела concept: одного
-immediate previous outcome недостаточно для проверки транзитивной зависимости. Для
+Novice-reviewer работает в две последовательно раскрываемые фазы. Сначала он
+получает только `00-novice.md`, физически оборванный на opening markers, и
+возвращает сохранённый first-contact checkpoint. Только после `CLEAR` тот же агент
+получает `01-blind.md`, проходит весь learner-facing материал до DONE и выносит
+итоговый verdict. Consistency-reviewer независимо получает `01-blind.md`, затем
+`02-consistency.md`: сначала восстанавливает модель и задание, после этого сверяет
+profile contracts, concept graph, rubric, checks, evidence и соседние карточки.
+Consistency packet содержит provenance каждого prerequisite и полный learner
+README той published session, которая впервые ввела concept: одного immediate
+previous outcome недостаточно для проверки транзитивной зависимости. Для
 публикации нужны два актуальных `PASS`; любое исправление устаревает по content hash
 и требует двух новых reviewers. После двойного session PASS всех карточек нужен
 такой же двойной module PASS.

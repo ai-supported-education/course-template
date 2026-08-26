@@ -63,12 +63,13 @@ GitHub переносит из template только default branch, поэто�
     pnpm author:content-review module 01
 
 Родительский Codex запускает двух независимых subagents без истории генерации.
-Novice-reviewer видит только prefixes README до скрытых opening markers и проверяет
-ссылки, незнакомые identifiers и полноту первого примера. Consistency-reviewer
-отдельно восстанавливает полный материал по blind packet и только затем сверяет
-его с profiles, rubric, checks/evidence и соседними карточками. CLI сам агентов не
-запускает; два полных report хранятся локально в `.authoring/`, а команда `attest`
-публикует schema v2 hash-свидетельство двух PASS. Подробнее — в
+Novice-reviewer сначала фиксирует first-contact checkpoint по prefixes README до
+скрытых opening markers, затем в том же диалоге читает полный learner-facing
+packet и проверяет весь путь до DONE. Consistency-reviewer отдельно восстанавливает
+полный материал по blind packet и только затем сверяет его с profiles, rubric,
+checks/evidence и соседними карточками. CLI сам агентов не запускает; checkpoints
+и полные reports хранятся локально в `.authoring/`, а команда `attest` публикует
+schema v2 hash-свидетельство двух PASS. Подробнее — в
 [content-review protocol](curriculum/content-review-protocol.md).
 
 ## Стековые правила

@@ -73,7 +73,8 @@ README карточки точным скрытым marker:
 ```
 
 Он ставится до outcome и подробного объяснения. Не переносите недостающую опору за
-marker: novice-reviewer физически её не увидит.
+marker: novice-reviewer физически не увидит её в sealed first-contact phase, а
+поздний текст не сможет исправить уже сохранённый finding.
 
 Не начинайте learner-facing текст с каталога терминов, scope или команд. Эти
 формальные разделы остаются обязательными, но становятся ответом на уже понятный
@@ -189,14 +190,22 @@ pnpm author:content-review session <id>
 
 Запустите novice-subagent с `fork_turns="none"` и передайте ему только путь к
 `00-novice.md`. Он построчно проверяет opening prefixes, antecedents, identifiers и
-полноту первого примера. Затем независимо запустите consistency-subagent с
-`fork_turns="none"` и передайте только `01-blind.md` и `02-consistency.md`: сначала
-агент реконструирует learner material по 01, затем сверяет profiles, concept graph,
-rubric, checks, evidence, safety и соседние карточки по 02. Для транзитивных
-prerequisites агент сверяет provenance-карту и приложенные learner README source
-sessions, а не требует введения каждого concept в immediate previous card. Оба
-reviewer read-only; не передавайте им авторские рассуждения или отчёт другого
-агента.
+полноту первого примера, затем возвращает не финальный verdict, а first-contact
+checkpoint `CLEAR|REWRITE`. Сохраните его отдельным файлом. При `REWRITE`
+исправьте материал и начните весь review заново. При `CLEAR` продолжите тот же
+диалог и передайте агенту только `01-blind.md`: теперь он читает весь
+learner-facing маршрут, проверяет объяснения, примеры, задание, evidence, DONE и
+handoff, после чего возвращает итоговый novice `PASS|NEEDS_REWRITE`. Его ранние
+выводы нельзя смягчить поздним объяснением.
+
+Независимо запустите consistency-subagent с `fork_turns="none"`. Не передавайте
+ему novice packet, checkpoint или report. Сначала дайте только `01-blind.md` и
+попросите письменно реконструировать learner material. Лишь после этого откройте
+`02-consistency.md`: агент сверяет profiles, concept graph, rubric, checks,
+evidence, safety и соседние карточки. Для транзитивных prerequisites он использует
+provenance-карту и приложенные learner README source sessions, а не требует
+введения каждого concept в immediate previous card. Оба reviewer read-only; не
+передавайте им авторские рассуждения или отчёт другого агента.
 
 После отчёта:
 
@@ -208,11 +217,13 @@ pnpm author:content-review attest session <id>
 ```
 
 При BLOCKER/MAJOR исправьте материал и используйте двух новых fresh subagents:
-старые диалоги уже знают авторский замысел. Центральный неизвестный identifier в
+нельзя продолжать прежний novice checkpoint или consistency reconstruction, потому
+что эти диалоги уже видели старую версию. Центральный неизвестный identifier в
 opening остаётся MAJOR, даже если определён ниже marker. После двух PASS всех
 карточек повторите парную процедуру для module и запишите module attestation. Raw
-packets/reports остаются локально в `.authoring/`; публичная schema v2 attestation
-хранит отдельные hash отчётов novice и consistency.
+first-contact checkpoints, packets и reports остаются локально в `.authoring/`;
+публичная schema v2 attestation хранит отдельные hash итоговых отчётов novice и
+consistency.
 
 ## 9. Проведите пилот
 

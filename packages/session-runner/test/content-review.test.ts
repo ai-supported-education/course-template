@@ -14,7 +14,7 @@ import {
 } from "../src/content-review.js";
 
 describe("author content review", () => {
-  it("builds isolated novice and consistency packets without later-text leakage", async () => {
+  it("builds a sealed first contact, full novice walkthrough and independent consistency packets", async () => {
     const root = await createWorkspace();
     const prepared = await prepareContentReview(root, "session", "01-02");
     const novice = await readFile(prepared.novicePacketPath, "utf8");
@@ -25,8 +25,9 @@ describe("author content review", () => {
     expect(path.basename(prepared.novicePacketPath)).toBe("00-novice.md");
     expect(cliOutput).toContain("ДВУХ независимых fresh subagents");
     expect(cliOutput).toContain("fork_turns=none");
-    expect(cliOutput).toContain("Novice-agent получает и читает только 00-novice.md");
-    expect(cliOutput).toContain("consistency-agent не получает novice report");
+    expect(cliOutput).toContain("Novice-agent сначала получает только 00-novice.md");
+    expect(cliOutput).toContain("тому же novice-agent отдельным follow-up");
+    expect(cliOutput).toContain("consistency-agent не получает novice packets или reports");
     expect(cliOutput).toContain("--record novice session 01-02");
     expect(cliOutput).toContain("--record consistency session 01-02");
 
@@ -54,6 +55,8 @@ describe("author content review", () => {
     expect(novice).toContain("необходимый для понимания ведущего примера, — MAJOR");
     expect(novice).toContain("## Reference audit");
     expect(novice).toContain("## Identifier and API audit");
+    expect(novice).toContain("Checkpoint: CLEAR|REWRITE");
+    expect(novice).not.toContain("## Learner walkthrough");
 
     expect(blind).toContain("Previous explanation");
     expect(blind).toContain("Current explanation");
@@ -78,8 +81,12 @@ describe("author content review", () => {
     expect(blind).not.toContain("Root late explanation");
     expect(blind).not.toContain("# Software profile");
     expect(blind).not.toContain("requires=[previous-concept]");
-    expect(blind).toContain("Не открывайте `00-novice.md`");
-    expect(blind).toContain("novice report");
+    expect(blind).toContain("после собственного сохранённого first-contact checkpoint");
+    expect(blind).toContain("не читаете `00-novice.md`");
+    expect(blind).toContain("## Learner walkthrough");
+    expect(blind).toContain("## Explanation and examples");
+    expect(blind).toContain("## Task, evidence and DONE");
+    expect(blind).toContain("## Continuity");
 
     expect(consistency).toContain("Secret rubric");
     expect(consistency).toContain("acceptance marker");
@@ -414,7 +421,7 @@ describe("author content review", () => {
     }
   });
 
-  it("treats legacy state and a public pre-v5 file as no current v5 review", async () => {
+  it("treats legacy state and a public pre-v6 file as no current v6 review", async () => {
     const root = await createWorkspace();
     const stateDirectory = path.join(root, ".authoring/content-review");
     await mkdir(stateDirectory, { recursive: true });
@@ -437,7 +444,7 @@ describe("author content review", () => {
     await mkdir(path.join(root, "curriculum/reviews"), { recursive: true });
     await writeFile(
       path.join(root, "curriculum/reviews/session-01-02.json"),
-      JSON.stringify({ schemaVersion: 2, protocol: "novice-first-contact-consistency-v4" })
+      JSON.stringify({ schemaVersion: 2, protocol: "novice-first-contact-consistency-v5" })
     );
 
     const status = await getContentReviewStatus(root, "session", "01-02");
@@ -510,6 +517,17 @@ describe("author content review", () => {
     await expect(
       recordContentReview(root, "novice", "session", "01-02", "PASS", reportPath)
     ).rejects.toThrow("## Reference audit");
+
+    await writeFile(
+      reportPath,
+      validNoviceReport("PASS").replace(
+        "## Learner walkthrough",
+        "## Learner notes"
+      )
+    );
+    await expect(
+      recordContentReview(root, "novice", "session", "01-02", "PASS", reportPath)
+    ).rejects.toThrow("## Learner walkthrough");
 
     await writeFile(reportPath, validNoviceReport("PASS"));
     await expect(
@@ -859,6 +877,18 @@ function validNoviceReport(verdict: "PASS" | "NEEDS_REWRITE"): string {
     "",
     "## Identifier and API audit",
     "Every central identifier is introduced.",
+    "",
+    "## Learner walkthrough",
+    "The full material stays understandable through DONE.",
+    "",
+    "## Explanation and examples",
+    "Examples contain inputs, actions and observations.",
+    "",
+    "## Task, evidence and DONE",
+    "The task is finishable from learner-facing material.",
+    "",
+    "## Continuity",
+    "The previous result and next contract are connected.",
     "",
     "## Findings",
     "No blockers.",

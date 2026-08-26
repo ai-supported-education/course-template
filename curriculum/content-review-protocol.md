@@ -1,6 +1,6 @@
 # Независимый content-review учебного материала
 
-Protocol id: `novice-first-contact-consistency-v5`.
+Protocol id: `novice-walkthrough-consistency-v6`.
 
 ## Зачем нужны два reviewer
 
@@ -10,9 +10,10 @@ Protocol id: `novice-first-contact-consistency-v5`.
 
 Поэтому публикацию независимо проверяют два fresh subagent:
 
-- **novice-reviewer** проверяет только первый контакт заявленной аудитории;
-- **consistency-reviewer** восстанавливает весь материал, а затем сверяет его с
-  авторским контрактом.
+- **novice-reviewer** сначала фиксирует первый контакт без поздних подсказок, а
+  затем проходит весь learner-facing материал до DONE;
+- **consistency-reviewer** независимо восстанавливает весь материал, а затем
+  сверяет его с авторским контрактом.
 
 Они не получают историю генерации и отчёты друг друга. Это author-side проверка
 материала, а не review решения учащегося.
@@ -32,8 +33,11 @@ outcome, подробная модель, примеры, задание и DONE
 
 `00-novice.md` физически содержит только prefix каждого включённого README до
 marker. Полный README туда не записывается. Поэтому позднее определение не может
-ретроспективно сделать начальный фрагмент понятным. Отсутствующий, повторный или
-неверно расположенный marker у published-материала блокирует сборку packet.
+ретроспективно сделать начальный фрагмент понятным. После сохранения этого
+first-contact checkpoint тот же novice-reviewer получает полный learner-facing
+packet `01-blind.md`: защита открытия сохраняется, но понятность остальной карточки
+тоже проверяется. Отсутствующий, повторный или неверно расположенный marker у
+published-материала блокирует сборку packet.
 
 ## Подготовка packet
 
@@ -52,13 +56,16 @@ review автор переводит готовую карточку в `publish
 Команда создаёт игнорируемую папку `.authoring/content-review/packets/...` с тремя
 фазами:
 
-- `00-novice.md` — заявленная стартовая точка аудитории, learner-visible
-  `outcome`/`done` предыдущей карточки для later session и только opening prefixes
-  применимых README до `<!-- content-review:opening:end -->`;
+- `00-novice.md` — первая фаза novice-review: заявленная стартовая точка
+  аудитории, learner-visible `outcome`/`done` предыдущей карточки для later session
+  и только opening prefixes применимых README до
+  `<!-- content-review:opening:end -->`;
 - `01-blind.md` — полные learner-facing файлы карточки, безопасный контекст
-  аудитории и материалы, необходимые для восстановления outcome, модели, задания и
-  DONE, но без rubric и авторского acceptance intent; для начала курса сюда также
-  входит полный корневой learner README;
+  аудитории и материалы, необходимые для восстановления outcome, модели, примеров,
+  задания и DONE, но без rubric и авторского acceptance intent. После sealed
+  checkpoint его получает novice-reviewer; независимо с него начинает
+  consistency-reviewer. Для начала курса сюда также входит полный корневой learner
+  README;
 - `02-consistency.md` — manifest/concept graph, rubric, checks/evidence, profile
   contracts, acceptance evidence, соседние карточки и provenance каждого
   prerequisite; для начала курса корневой README повторяется как course-level
@@ -108,13 +115,13 @@ answers, solutions, secrets и traversal paths отклоняются validator-
 и SHA-256. Существенный binary artifact получает текстовый companion с
 происхождением, форматом и способом интерпретации.
 
-## Novice-review
+## Novice-review: две фазы одного fresh-агента
 
-Родительский Codex запускает subagent с `fork_turns="none"` и передаёт только путь
-к `00-novice.md`. Агент не открывает repository, `01-blind.md`,
+Родительский Codex запускает subagent с `fork_turns="none"` и сначала передаёт
+только путь к `00-novice.md`. Агент не открывает repository, `01-blind.md`,
 `02-consistency.md`, authoring rules, profiles, hints, answers или solutions.
 
-Reviewer читает packet сверху вниз и фиксирует:
+В первой фазе reviewer читает packet сверху вниз и фиксирует:
 
 1. Какую стартовую ситуацию он понял, в чём затруднение и какой вопрос ведёт к
    практике.
@@ -127,20 +134,47 @@ Reviewer читает packet сверху вниз и фиксирует:
 5. Какие места удалось понять только благодаря собственным знаниям агента, а не
    заявленным prerequisites и opening.
 
-Novice report начинается с H1 и отдельной строки
-`Verdict: PASS|NEEDS_REWRITE`, после которой содержит разделы:
+Результат первой фазы — отдельный checkpoint `CLEAR|REWRITE`, а не финальный
+verdict по карточке. Родитель физически сохраняет checkpoint до продолжения. При
+`REWRITE` материал исправляется, и обе независимые проверки затем запускаются
+заново с новыми агентами. При `CLEAR` родитель продолжает тот же novice-диалог и
+передаёт только `01-blind.md`.
+
+Во второй фазе novice-reviewer проходит весь learner-facing packet в порядке
+чтения учащегося и проверяет:
+
+1. Можно ли восстановить причинную модель без rubric, tests, hints и авторского
+   контекста.
+2. Объяснён ли каждый новый термин и API до места, где он нужен для следующего
+   вывода или примера.
+3. Содержат ли примеры исходные значения, действие, наблюдение и явную связь с
+   объясняемой моделью.
+4. Достаточно ли текста и starter-артефактов, чтобы выполнить точное задание,
+   получить evidence и доказать DONE без следующей карточки.
+5. Связан ли текущий материал с доступным предыдущим результатом и следующим
+   learner-visible contract без скрытого prerequisite.
+
+Поздний текст может породить новый finding, но не позволяет переписать или
+смягчить сохранённый first-contact checkpoint. Итоговый novice report начинается с
+H1 и отдельной строки `Verdict: PASS|NEEDS_REWRITE`, после которой содержит
+разделы:
 
 - `Opening reconstruction`;
 - `Reference audit`;
 - `Identifier and API audit`;
+- `Learner walkthrough`;
+- `Explanation and examples`;
+- `Task, evidence and DONE`;
+- `Continuity`;
 - `Findings`;
 - `Verdict rationale`.
 
 ## Consistency-review
 
-Второй независимый subagent также запускается с `fork_turns="none"`. Ему передают
-только пути к `01-blind.md` и `02-consistency.md`; novice packet и novice report не
-передаются.
+Второй независимый subagent также запускается с `fork_turns="none"`. Он не получает
+`00-novice.md`, first-contact checkpoint или итоговый novice report. Сначала ему
+передают только `01-blind.md`; `02-consistency.md` раскрывается отдельным follow-up
+после письменной learner reconstruction.
 
 Reviewer обязан:
 
@@ -181,13 +215,16 @@ Consistency report начинается с H1 и отдельной строки
 - `MINOR` — локальная неоднозначная ссылка или улучшение порядка/навигации, которое
   не мешает восстановить модель и выполнить карточку.
 
-Объяснение, встреченное после opening marker, не понижает severity novice finding:
-первый контакт уже состоялся без него. `PASS` разрешён только без открытых BLOCKER
-и MAJOR; иначе verdict — `NEEDS_REWRITE`.
+Объяснение, встреченное после opening marker, не понижает severity finding из
+sealed first-contact: первый контакт уже состоялся без него. Итоговый novice
+`PASS` разрешён только без открытых BLOCKER и MAJOR и во вступлении, и в полном
+learner walkthrough. Для consistency действует та же граница verdict; иначе
+результат — `NEEDS_REWRITE`.
 
 После любого исправления родительский агент запускает **двух новых** fresh
-reviewers. Продолжение прежних диалогов и передача finding одного агента другому не
-считаются независимой проверкой.
+reviewers. Нельзя продолжать прежний novice checkpoint или consistency
+reconstruction: они относятся к старой версии. Передача finding одного агента
+другому не считается независимой проверкой.
 
 ## Запись результата и attestation schema v2
 
@@ -208,13 +245,13 @@ courseContextFiles или активных profile documents делает обе
     pnpm author:content-review attest session 01-01
 
 Публичный JSON использует `schemaVersion: 2` и
-`protocol: "novice-first-contact-consistency-v5"`. В объекте `reviews` находятся
+`protocol: "novice-walkthrough-consistency-v6"`. В объекте `reviews` находятся
 отдельные `novice` и `consistency`; для каждой проверки публикуются verdict, время
 review и SHA-256 соответствующего локального отчёта. Общий content hash остаётся
 на уровне attestation. Raw reports и packets остаются в `.authoring/`.
 
-Attestation v1 и protocol до v5 не удовлетворяют v5 и автоматически считаются
-устаревшими; старый одиночный PASS не мигрируется в один из новых stages. После
-двойного PASS всех опубликованных карточек module проходит такую же пару review и
-получает schema v2 attestation. Только актуальные двойные session и module PASS
-считаются готовыми к публикации.
+Attestation v1 и protocol до v6 не удовлетворяют v6 и автоматически считаются
+устаревшими; старый одиночный PASS или novice PASS только по opening не мигрируется
+в новый stage. После двойного PASS всех опубликованных карточек module проходит
+такую же пару review и получает schema v2 attestation. Только актуальные двойные
+session и module PASS считаются готовыми к публикации.
