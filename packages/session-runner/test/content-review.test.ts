@@ -3,68 +3,61 @@ import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  CONTENT_REVIEW_OPENING_MARKER,
   CONTENT_REVIEW_PROTOCOL,
   formatPreparedContentReview,
   getContentReviewStatus,
+  parseContentReviewStage,
   prepareContentReview,
   recordContentReview,
   writeContentReviewAttestation
 } from "../src/content-review.js";
 
 describe("author content review", () => {
-  it("builds ordered first-contact, blind and consistency packets without leakage", async () => {
+  it("builds isolated novice and consistency packets without later-text leakage", async () => {
     const root = await createWorkspace();
     const prepared = await prepareContentReview(root, "session", "01-02");
-    const firstContact = await readFile(
-      prepared.firstContactPacketPath,
-      "utf8"
-    );
+    const novice = await readFile(prepared.novicePacketPath, "utf8");
     const blind = await readFile(prepared.blindPacketPath, "utf8");
     const consistency = await readFile(prepared.consistencyPacketPath, "utf8");
     const cliOutput = formatPreparedContentReview(prepared);
 
-    expect(path.basename(prepared.firstContactPacketPath)).toBe(
-      "00-first-contact.md"
-    );
-    expect(cliOutput.indexOf("00-first-contact.md")).toBeLessThan(
-      cliOutput.indexOf("01-blind.md")
-    );
-    expect(cliOutput.indexOf("01-blind.md")).toBeLessThan(
-      cliOutput.indexOf("02-consistency.md")
-    );
-    expect(cliOutput).toContain("00 → 01 → 02");
+    expect(path.basename(prepared.novicePacketPath)).toBe("00-novice.md");
+    expect(cliOutput).toContain("ДВУХ независимых fresh subagents");
+    expect(cliOutput).toContain("fork_turns=none");
+    expect(cliOutput).toContain("Novice-agent получает и читает только 00-novice.md");
+    expect(cliOutput).toContain("consistency-agent не получает novice report");
+    expect(cliOutput).toContain("--record novice session 01-02");
+    expect(cliOutput).toContain("--record consistency session 01-02");
 
-    expect(firstContact).toContain("Module learning arc");
-    expect(firstContact).toContain("Previous explanation");
-    expect(firstContact).toContain("Current explanation");
-    expect(firstContact).not.toContain("Root learner welcome");
-    expect(firstContact).toContain(
-      "отсутствие course opening в этом packet не является finding"
-    );
-    expect(firstContact).not.toContain("Test learner");
-    expect(firstContact).not.toContain("Software profile");
-    expect(firstContact).not.toContain("Canonical test audience");
-    expect(firstContact).not.toContain("Secret rubric");
-    expect(firstContact).not.toContain("hidden hint marker");
-    expect(firstContact).not.toContain("reference solution marker");
-    expect(firstContact).not.toContain("quiz data marker");
-    expect(firstContact).not.toContain("learner draft");
-    expect(firstContact.indexOf("Module learning arc")).toBeLessThan(
-      firstContact.indexOf("Previous explanation")
-    );
-    expect(firstContact.indexOf("Previous explanation")).toBeLessThan(
-      firstContact.indexOf("Current explanation")
-    );
-    expect(firstContact).toContain("остановитесь после первых 2–4 абзацев");
-    expect(firstContact).toContain(
-      "Оцените раздельно только те уровни входа, которые перечислены в scope note"
-    );
-    expect(firstContact).toContain(
-      "позднее объяснение не исправляет первое впечатление"
-    );
+    expect(novice).toContain("Audience: Test learner");
+    expect(novice).toContain("Assumed concepts: (none)");
+    expect(novice).toContain("Title: Previous");
+    expect(novice).toContain("Outcome: Previous outcome");
+    expect(novice).toContain("DONE: Previous done");
+    expect(novice).toContain("Module learning arc");
+    expect(novice).toContain("Current explanation");
+    expect(novice).not.toContain("Root learner welcome");
+    expect(novice).not.toContain("Previous explanation");
+    expect(novice).not.toContain("Current late explanation");
+    expect(novice).not.toContain(CONTENT_REVIEW_OPENING_MARKER);
+    expect(novice).not.toContain("Software profile");
+    expect(novice).not.toContain("Canonical test audience");
+    expect(novice).not.toContain("Secret rubric");
+    expect(novice).not.toContain("hidden hint marker");
+    expect(novice).not.toContain("reference solution marker");
+    expect(novice).not.toContain("quiz data marker");
+    expect(novice).not.toContain("learner draft");
+    expect(novice).toContain("каждого центрального identifier, API");
+    expect(novice).toContain("начальное состояние, событие или действие");
+    expect(novice).toContain("не исправляет opening задним числом");
+    expect(novice).toContain("необходимый для понимания ведущего примера, — MAJOR");
+    expect(novice).toContain("## Reference audit");
+    expect(novice).toContain("## Identifier and API audit");
 
     expect(blind).toContain("Previous explanation");
     expect(blind).toContain("Current explanation");
+    expect(blind).toContain("Current late explanation");
     expect(blind).toContain("Next contract");
     expect(blind).not.toContain("Secret rubric");
     expect(blind).not.toContain("acceptance marker");
@@ -81,6 +74,10 @@ describe("author content review", () => {
     expect(blind).not.toContain("quiz data marker");
     expect(blind).toContain("Canonical test audience");
     expect(blind).toContain("Module learning arc");
+    expect(blind).not.toContain("# Software profile");
+    expect(blind).not.toContain("requires=[previous-concept]");
+    expect(blind).toContain("Не открывайте `00-novice.md`");
+    expect(blind).toContain("novice report");
 
     expect(consistency).toContain("Secret rubric");
     expect(consistency).toContain("acceptance marker");
@@ -94,66 +91,63 @@ describe("author content review", () => {
     expect(consistency).toContain("Canonical test audience");
     expect(consistency).toContain("01-04 [planned]: Future contract");
     expect(consistency).toContain("Calm learner-facing language contract");
-    expect(consistency).toContain("## First contact and language");
-    expect(consistency).toContain(
-      "Раздельно оцените представленные в `00-first-contact.md` уровни входа"
-    );
+    expect(consistency).toContain("не должны получать или искать novice report");
+    expect(consistency).toContain("## Continuity and profiles");
+    expect(consistency).not.toContain("## First contact and language");
   });
 
-  it("shows root, module and target in order for the first course session", async () => {
+  it("shows only root, module and target openings for the first course session", async () => {
     const root = await createWorkspace();
     const prepared = await prepareContentReview(root, "session", "01-01");
-    const packet = await readFile(prepared.firstContactPacketPath, "utf8");
+    const packet = await readFile(prepared.novicePacketPath, "utf8");
 
     expect(packet.indexOf("Root learner welcome")).toBeLessThan(
       packet.indexOf("Module learning arc")
     );
     expect(packet).toContain("это начало курса");
-    expect(packet).toContain("Оцените все три уровня");
+    expect(packet).toContain("Оцените каждый уровень отдельно");
     expect(packet.indexOf("Module learning arc")).toBeLessThan(
       packet.indexOf("Previous explanation")
     );
+    expect(packet).not.toContain("Root late explanation");
+    expect(packet).not.toContain("Module late explanation");
+    expect(packet).not.toContain("Previous late explanation");
+    expect(packet).not.toContain(CONTENT_REVIEW_OPENING_MARKER);
   });
 
-  it("shows module, previous context and target for a later module session", async () => {
+  it("shows learner-visible previous summary and relevant openings for a later module", async () => {
     const root = await createTwoModuleWorkspace();
     const prepared = await prepareContentReview(root, "session", "02-01");
-    const packet = await readFile(prepared.firstContactPacketPath, "utf8");
+    const packet = await readFile(prepared.novicePacketPath, "utf8");
 
     expect(packet).not.toContain("Root learner welcome");
-    expect(packet).toContain(
-      "отсутствие course opening в этом packet не является finding"
+    expect(packet).toContain("Title: Next");
+    expect(packet).toContain("Outcome: Next outcome");
+    expect(packet).not.toContain("Next explanation");
+    expect(packet.indexOf("Title: Next")).toBeLessThan(
+      packet.indexOf("Second module entry")
     );
     expect(packet.indexOf("Second module entry")).toBeLessThan(
-      packet.indexOf("Next explanation")
-    );
-    expect(packet.indexOf("Next explanation")).toBeLessThan(
       packet.indexOf("Second module target")
     );
   });
 
-  it("uses root only for the first module and keeps later module continuity", async () => {
+  it("uses root only for the first module and includes every published session opening", async () => {
     const firstRoot = await createWorkspace();
     const firstPrepared = await prepareContentReview(firstRoot, "module", "01");
-    const firstPacket = await readFile(
-      firstPrepared.firstContactPacketPath,
-      "utf8"
-    );
+    const firstPacket = await readFile(firstPrepared.novicePacketPath, "utf8");
     expect(firstPacket.indexOf("Root learner welcome")).toBeLessThan(
       firstPacket.indexOf("Module learning arc")
     );
+    expect(firstPacket).toContain("Previous explanation");
+    expect(firstPacket).toContain("Current explanation");
+    expect(firstPacket).toContain("Next explanation");
 
     const laterRoot = await createTwoModuleWorkspace();
     const laterPrepared = await prepareContentReview(laterRoot, "module", "02");
-    const laterPacket = await readFile(
-      laterPrepared.firstContactPacketPath,
-      "utf8"
-    );
+    const laterPacket = await readFile(laterPrepared.novicePacketPath, "utf8");
     expect(laterPacket).not.toContain("Root learner welcome");
-    expect(laterPacket).toContain(
-      "отсутствие course opening в этом packet не является finding"
-    );
-    expect(laterPacket.indexOf("Next explanation")).toBeLessThan(
+    expect(laterPacket.indexOf("Title: Next")).toBeLessThan(
       laterPacket.indexOf("Second module entry")
     );
     expect(laterPacket.indexOf("Second module entry")).toBeLessThan(
@@ -161,22 +155,46 @@ describe("author content review", () => {
     );
   });
 
-  it("records a structured verdict and invalidates it after content changes", async () => {
+  it("requires separate current PASS records and writes a schema v2 attestation", async () => {
     const root = await createWorkspace();
-    const reportPath = path.join(root, "report.md");
-    await writeFile(reportPath, validReport("PASS"));
+    const noviceReportPath = path.join(root, "novice-report.md");
+    const consistencyReportPath = path.join(root, "consistency-report.md");
+    await writeFile(noviceReportPath, validNoviceReport("PASS"));
+    await writeFile(consistencyReportPath, validConsistencyReport("PASS"));
 
-    const record = await recordContentReview(
+    const noviceRecord = await recordContentReview(
       root,
+      "novice",
       "session",
       "01-02",
       "PASS",
-      reportPath
+      noviceReportPath
     );
-    expect(record.verdict).toBe("PASS");
-    expect((await getContentReviewStatus(root, "session", "01-02")).current).toBe(
-      true
+    expect(noviceRecord.stage).toBe("novice");
+    expect(path.basename(noviceRecord.reportPath)).toContain("-novice-");
+    let status = await getContentReviewStatus(root, "session", "01-02");
+    expect(status.reviews.novice.current).toBe(true);
+    expect(status.reviews.consistency.record).toBeNull();
+    expect(status.current).toBe(false);
+    await expect(
+      writeContentReviewAttestation(root, "session", "01-02")
+    ).rejects.toThrow("два актуальных content-review PASS");
+
+    const consistencyRecord = await recordContentReview(
+      root,
+      "consistency",
+      "session",
+      "01-02",
+      "PASS",
+      consistencyReportPath
     );
+    expect(path.basename(consistencyRecord.reportPath)).toContain(
+      "-consistency-"
+    );
+    expect(consistencyRecord.reportPath).not.toBe(noviceRecord.reportPath);
+    status = await getContentReviewStatus(root, "session", "01-02");
+    expect(status.current).toBe(true);
+
     const attestation = await writeContentReviewAttestation(
       root,
       "session",
@@ -184,17 +202,42 @@ describe("author content review", () => {
     );
     const publicRecord = JSON.parse(
       await readFile(attestation.path, "utf8")
-    ) as Record<string, unknown>;
+    ) as {
+      schemaVersion: number;
+      verdict: string;
+      contentHash: string;
+      protocol: string;
+      reviews: Record<"novice" | "consistency", Record<string, string>>;
+    };
+    expect(publicRecord.schemaVersion).toBe(2);
     expect(publicRecord.verdict).toBe("PASS");
-    expect(publicRecord.contentHash).toBe(record.contentHash);
-    expect(publicRecord.reportSha256).toMatch(/^[a-f0-9]{64}$/);
+    expect(publicRecord.contentHash).toBe(noviceRecord.contentHash);
+    expect(publicRecord.reviews.novice.reviewedAt).toBe(
+      noviceRecord.reviewedAt
+    );
+    expect(publicRecord.reviews.novice.verdict).toBe("PASS");
+    expect(publicRecord.reviews.consistency.reviewedAt).toBe(
+      consistencyRecord.reviewedAt
+    );
+    expect(publicRecord.reviews.novice.reportSha256).toMatch(/^[a-f0-9]{64}$/);
+    expect(publicRecord.reviews.consistency.reportSha256).toMatch(
+      /^[a-f0-9]{64}$/
+    );
     expect(publicRecord.protocol).toBe(CONTENT_REVIEW_PROTOCOL);
+  });
+
+  it("invalidates both stages after an opening or reviewed contract changes", async () => {
+    const root = await createWorkspace();
+    await recordBothPasses(root, "session", "01-02");
+    expect((await getContentReviewStatus(root, "session", "01-02")).current).toBe(
+      true
+    );
 
     const languagePath = path.join(root, "docs/learner-facing-language.md");
     await writeFile(languagePath, "# Changed language contract\n");
-    expect((await getContentReviewStatus(root, "session", "01-02")).current).toBe(
-      false
-    );
+    let status = await getContentReviewStatus(root, "session", "01-02");
+    expect(status.reviews.novice.current).toBe(false);
+    expect(status.reviews.consistency.current).toBe(false);
     await writeFile(
       languagePath,
       "# Learner-facing language\nCalm learner-facing language contract.\n"
@@ -202,12 +245,11 @@ describe("author content review", () => {
 
     const profilePath = path.join(root, "docs/course-profiles/software.md");
     await writeFile(profilePath, "# Changed software profile\n");
-    expect((await getContentReviewStatus(root, "session", "01-02")).current).toBe(
-      false
-    );
+    status = await getContentReviewStatus(root, "session", "01-02");
+    expect(status.current).toBe(false);
     await expect(
       writeContentReviewAttestation(root, "session", "01-02")
-    ).rejects.toThrow("актуальный записанный content-review PASS");
+    ).rejects.toThrow("два актуальных content-review PASS");
     await writeFile(
       profilePath,
       "# Software profile\nVerify public behavior.\n"
@@ -215,23 +257,30 @@ describe("author content review", () => {
 
     const audiencePath = path.join(root, "curriculum/audience.md");
     await writeFile(audiencePath, "# Changed audience\n");
-    expect((await getContentReviewStatus(root, "session", "01-02")).current).toBe(
-      false
-    );
+    expect((await getContentReviewStatus(root, "session", "01-02")).current).toBe(false);
     await writeFile(audiencePath, "# Audience\nCanonical test audience.\n");
 
     const moduleReadme = path.join(root, "modules/01-test/README.md");
-    await writeFile(moduleReadme, "# Changed module arc\n");
-    expect((await getContentReviewStatus(root, "session", "01-02")).current).toBe(
-      false
-    );
     await writeFile(
       moduleReadme,
-      "# Module learning arc\nFrom evidence to diagnosis.\n"
+      learnerReadme("# Changed module arc", "Changed module late explanation")
+    );
+    status = await getContentReviewStatus(root, "session", "01-02");
+    expect(status.reviews.novice.current).toBe(false);
+    expect(status.reviews.consistency.current).toBe(false);
+    await writeFile(
+      moduleReadme,
+      learnerReadme(
+        "# Module learning arc\nFrom evidence to diagnosis.",
+        "Module late explanation"
+      )
     );
 
     const firstBefore = await prepareContentReview(root, "session", "01-01");
-    await writeFile(path.join(root, "README.md"), "# Changed root entry\n");
+    await writeFile(
+      path.join(root, "README.md"),
+      learnerReadme("# Changed root entry", "Changed root late explanation")
+    );
     const firstAfter = await prepareContentReview(root, "session", "01-01");
     expect(firstAfter.contentHash).not.toBe(firstBefore.contentHash);
     expect((await getContentReviewStatus(root, "session", "01-02")).current).toBe(
@@ -242,10 +291,72 @@ describe("author content review", () => {
       root,
       "modules/01-test/sessions/01-02/README.md"
     );
-    await writeFile(readme, "# Changed material\n");
+    await writeFile(
+      readme,
+      learnerReadme("# Changed material", "Changed late material")
+    );
     const stale = await getContentReviewStatus(root, "session", "01-02");
     expect(stale.current).toBe(false);
-    expect(stale.record?.contentHash).toBe(record.contentHash);
+    expect(stale.reviews.novice.record?.contentHash).toBe(
+      stale.reviews.consistency.record?.contentHash
+    );
+  });
+
+  it("treats legacy state and a public schema v1 file as no current v4 review", async () => {
+    const root = await createWorkspace();
+    const stateDirectory = path.join(root, ".authoring/content-review");
+    await mkdir(stateDirectory, { recursive: true });
+    await writeFile(
+      path.join(stateDirectory, "state.json"),
+      JSON.stringify({
+        schemaVersion: 1,
+        records: {
+          "session:01-02": {
+            scope: "session",
+            id: "01-02",
+            verdict: "PASS",
+            contentHash: "legacy",
+            reviewedAt: "2026-01-01T00:00:00.000Z",
+            reportPath: ".authoring/content-review/reports/legacy.md"
+          }
+        }
+      })
+    );
+    await mkdir(path.join(root, "curriculum/reviews"), { recursive: true });
+    await writeFile(
+      path.join(root, "curriculum/reviews/session-01-02.json"),
+      JSON.stringify({ schemaVersion: 1, protocol: "first-contact-blind-consistency-v3" })
+    );
+
+    const status = await getContentReviewStatus(root, "session", "01-02");
+    expect(status.reviews.novice.record).toBeNull();
+    expect(status.reviews.consistency.record).toBeNull();
+    expect(status.current).toBe(false);
+    await expect(
+      writeContentReviewAttestation(root, "session", "01-02")
+    ).rejects.toThrow("два актуальных content-review PASS");
+  });
+
+  it("blocks attestation when either current stage is NEEDS_REWRITE", async () => {
+    const root = await createWorkspace();
+    const novicePath = path.join(root, "novice.md");
+    const consistencyPath = path.join(root, "consistency.md");
+    await writeFile(novicePath, validNoviceReport("PASS"));
+    await writeFile(consistencyPath, validConsistencyReport("NEEDS_REWRITE"));
+    await recordContentReview(root, "novice", "session", "01-02", "PASS", novicePath);
+    await recordContentReview(
+      root,
+      "consistency",
+      "session",
+      "01-02",
+      "NEEDS_REWRITE",
+      consistencyPath
+    );
+
+    expect((await getContentReviewStatus(root, "session", "01-02")).current).toBe(false);
+    await expect(
+      writeContentReviewAttestation(root, "session", "01-02")
+    ).rejects.toThrow("два актуальных content-review PASS");
   });
 
   it("shows a planned next contract without claiming the course ended", async () => {
@@ -269,30 +380,59 @@ describe("author content review", () => {
     expect(blind).toContain("releaseStatus=planned");
   });
 
-  it("rejects an unstructured or mismatched report", async () => {
+  it("validates novice and consistency report formats independently", async () => {
     const root = await createWorkspace();
     const reportPath = path.join(root, "report.md");
-    await writeFile(reportPath, validReport("NEEDS_REWRITE"));
+    await writeFile(reportPath, validNoviceReport("NEEDS_REWRITE"));
 
     await expect(
-      recordContentReview(root, "session", "01-02", "PASS", reportPath)
+      recordContentReview(root, "novice", "session", "01-02", "PASS", reportPath)
     ).rejects.toThrow("не совпадает");
-  });
-
-  it("requires the exact first-contact report heading", async () => {
-    const root = await createWorkspace();
-    const reportPath = path.join(root, "report.md");
     await writeFile(
       reportPath,
-      validReport("PASS").replace(
-        "## First contact and language",
-        "## First contact and language notes"
+      validNoviceReport("PASS").replace(
+        "## Reference audit",
+        "## Reference notes"
       )
     );
-
     await expect(
-      recordContentReview(root, "session", "01-02", "PASS", reportPath)
-    ).rejects.toThrow("## First contact and language");
+      recordContentReview(root, "novice", "session", "01-02", "PASS", reportPath)
+    ).rejects.toThrow("## Reference audit");
+
+    await writeFile(reportPath, validNoviceReport("PASS"));
+    await expect(
+      recordContentReview(root, "consistency", "session", "01-02", "PASS", reportPath)
+    ).rejects.toThrow("## Learner reconstruction");
+
+    await writeFile(
+      reportPath,
+      validConsistencyReport("PASS").replace(
+        "## Continuity and profiles",
+        "## Continuity"
+      )
+    );
+    await expect(
+      recordContentReview(root, "consistency", "session", "01-02", "PASS", reportPath)
+    ).rejects.toThrow("## Continuity and profiles");
+  });
+
+  it("rejects missing opening marker in every required learner README", async () => {
+    const root = await createWorkspace();
+    await writeFile(
+      path.join(root, "modules/01-test/sessions/01-02/README.md"),
+      "# Current explanation\nNo marker.\n"
+    );
+    await expect(
+      prepareContentReview(root, "session", "01-02")
+    ).rejects.toThrow("отсутствует marker <!-- content-review:opening:end -->");
+
+    await writeFile(
+      path.join(root, "modules/01-test/sessions/01-02/README.md"),
+      `# Current\n${CONTENT_REVIEW_OPENING_MARKER}\nMiddle\n${CONTENT_REVIEW_OPENING_MARKER}\nLate\n`
+    );
+    await expect(
+      prepareContentReview(root, "session", "01-02")
+    ).rejects.toThrow("должен встречаться ровно один раз");
   });
 
   it("requires the canonical learner-facing language contract", async () => {
@@ -305,6 +445,14 @@ describe("author content review", () => {
     await expect(
       prepareContentReview(root, "session", "01-01")
     ).rejects.toThrow("обязательный learner-facing language contract");
+  });
+
+  it("parses only canonical review stages", () => {
+    expect(parseContentReviewStage("novice")).toBe("novice");
+    expect(parseContentReviewStage("consistency")).toBe("consistency");
+    expect(() => parseContentReviewStage("first-contact")).toThrow(
+      "novice или consistency"
+    );
   });
 });
 
@@ -410,7 +558,10 @@ async function createWorkspace(): Promise<string> {
   };
   await mkdir(path.join(root, "curriculum"), { recursive: true });
   await mkdir(path.join(root, "docs/course-profiles"), { recursive: true });
-  await writeFile(path.join(root, "README.md"), "# Root learner welcome\n");
+  await writeFile(
+    path.join(root, "README.md"),
+    learnerReadme("# Root learner welcome", "Root late explanation")
+  );
   await writeFile(
     path.join(root, "docs/learner-facing-language.md"),
     "# Learner-facing language\nCalm learner-facing language contract.\n"
@@ -430,7 +581,10 @@ async function createWorkspace(): Promise<string> {
   await mkdir(path.join(root, "modules/01-test"), { recursive: true });
   await writeFile(
     path.join(root, "modules/01-test/README.md"),
-    "# Module learning arc\nFrom evidence to diagnosis.\n"
+    learnerReadme(
+      "# Module learning arc\nFrom evidence to diagnosis.",
+      "Module late explanation"
+    )
   );
 
   for (const session of sessions) {
@@ -446,7 +600,10 @@ async function createWorkspace(): Promise<string> {
         : session.id === "01-02"
           ? "Current explanation"
           : "Next explanation";
-    await writeFile(path.join(directory, "README.md"), `# ${label}\n`);
+    await writeFile(
+      path.join(directory, "README.md"),
+      learnerReadme(`# ${label}`, `${label.replace("explanation", "late explanation")}`)
+    );
     await writeFile(path.join(directory, "rubric.md"), "# Secret rubric\n");
     await writeFile(
       path.join(directory, "exercise.test.tsx"),
@@ -541,37 +698,81 @@ async function createTwoModuleWorkspace(): Promise<string> {
   await mkdir(sessionDirectory, { recursive: true });
   await writeFile(
     path.join(moduleDirectory, "README.md"),
-    "# Second module entry\n"
+    learnerReadme("# Second module entry", "Second module late explanation")
   );
   await writeFile(
     path.join(sessionDirectory, "README.md"),
-    "# Second module target\n"
+    learnerReadme("# Second module target", "Second target late explanation")
   );
   await writeFile(path.join(sessionDirectory, "rubric.md"), "# Rubric\n");
 
   return root;
 }
 
-function validReport(verdict: "PASS" | "NEEDS_REWRITE"): string {
+async function recordBothPasses(
+  root: string,
+  scope: "session" | "module",
+  id: string
+): Promise<void> {
+  const novicePath = path.join(root, "novice-pass.md");
+  const consistencyPath = path.join(root, "consistency-pass.md");
+  await writeFile(novicePath, validNoviceReport("PASS"));
+  await writeFile(consistencyPath, validConsistencyReport("PASS"));
+  await recordContentReview(root, "novice", scope, id, "PASS", novicePath);
+  await recordContentReview(
+    root,
+    "consistency",
+    scope,
+    id,
+    "PASS",
+    consistencyPath
+  );
+}
+
+function learnerReadme(opening: string, later: string): string {
+  return `${opening.trimEnd()}\n\n${CONTENT_REVIEW_OPENING_MARKER}\n\n${later.trimEnd()}\n`;
+}
+
+function validNoviceReport(verdict: "PASS" | "NEEDS_REWRITE"): string {
+  return [
+    "# Novice content review",
+    "",
+    `Verdict: ${verdict}`,
+    "",
+    "## Opening reconstruction",
+    "Initial state, event and observation are available.",
+    "",
+    "## Reference audit",
+    "Every reference has an antecedent.",
+    "",
+    "## Identifier and API audit",
+    "Every central identifier is introduced.",
+    "",
+    "## Findings",
+    "No blockers.",
+    "",
+    "## Verdict rationale",
+    "Complete."
+  ].join("\n");
+}
+
+function validConsistencyReport(verdict: "PASS" | "NEEDS_REWRITE"): string {
   return [
     "# Content review",
     "",
     `Verdict: ${verdict}`,
     "",
-    "## First contact and language",
-    "The entry is contextual and readable.",
-    "",
     "## Learner reconstruction",
     "Understood.",
     "",
-    "## Continuity",
+    "## Continuity and profiles",
     "Connected.",
-    "",
-    "## Findings",
-    "No blockers.",
     "",
     "## Evidence and safety",
     "Evidence is reproducible and scoped.",
+    "",
+    "## Findings",
+    "No blockers.",
     "",
     "## Verdict rationale",
     "Complete."

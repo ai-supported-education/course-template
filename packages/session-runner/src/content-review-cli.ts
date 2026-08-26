@@ -5,6 +5,7 @@ import {
   formatPreparedContentReview,
   getContentReviewStatus,
   parseContentReviewScope,
+  parseContentReviewStage,
   parseContentReviewVerdict,
   prepareContentReview,
   recordContentReview,
@@ -24,38 +25,43 @@ async function main(): Promise<void> {
       [
         `Content review: ${scope} ${id}.`,
         `Current hash: ${status.contentHash}.`,
-        status.record
-          ? `Recorded: ${status.record.verdict} at ${status.record.reviewedAt}.`
-          : "Recorded: отсутствует.",
+        ...(["novice", "consistency"] as const).map((stage) => {
+          const review = status.reviews[stage];
+          return review.record
+            ? `${stage}: ${review.record.verdict} at ${review.record.reviewedAt}; ${review.current ? "CURRENT" : "STALE"}.`
+            : `${stage}: отсутствует.`;
+        }),
         `Status: ${status.current ? "CURRENT" : "STALE_OR_MISSING"}.`
       ].join("\n")
     );
-    if (!status.current || status.record?.verdict !== "PASS") {
+    if (!status.current) {
       process.exitCode = 1;
     }
     return;
   }
 
   if (args[0] === "--record") {
-    const scope = parseContentReviewScope(args[1] ?? "");
-    const id = requireId(args[2]);
-    const verdict = parseContentReviewVerdict(args[3] ?? "");
+    const stage = parseContentReviewStage(args[1] ?? "");
+    const scope = parseContentReviewScope(args[2] ?? "");
+    const id = requireId(args[3]);
+    const verdict = parseContentReviewVerdict(args[4] ?? "");
     const reportIndex = args.indexOf("--report");
     const reportPath = reportIndex >= 0 ? args[reportIndex + 1] : undefined;
     if (!reportPath) {
       throw new Error(
-        "Использование: pnpm author:content-review --record <session|module> <id> PASS|NEEDS_REWRITE --report <path>"
+        "Использование: pnpm author:content-review --record <novice|consistency> <session|module> <id> PASS|NEEDS_REWRITE --report <path>"
       );
     }
     const record = await recordContentReview(
       root,
+      stage,
       scope,
       id,
       verdict,
       path.resolve(reportPath)
     );
     console.log(
-      `Content review ${record.verdict} записан для ${scope} ${id}, hash ${record.contentHash}.`
+      `Content review ${record.stage} ${record.verdict} записан для ${scope} ${id}, hash ${record.contentHash}.`
     );
     return;
   }

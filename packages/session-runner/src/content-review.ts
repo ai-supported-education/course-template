@@ -27,11 +27,15 @@ import type {
 import { getModuleDirectory, getSessionDirectory } from "./workspace.js";
 
 export const CONTENT_REVIEW_VERDICTS = ["PASS", "NEEDS_REWRITE"] as const;
+export const CONTENT_REVIEW_STAGES = ["novice", "consistency"] as const;
 export const CONTENT_REVIEW_PROTOCOL =
-  "first-contact-blind-consistency-v3" as const;
+  "novice-first-contact-consistency-v4" as const;
+export const CONTENT_REVIEW_OPENING_MARKER =
+  "<!-- content-review:opening:end -->" as const;
 export const LEARNER_FACING_LANGUAGE_PATH =
   "docs/learner-facing-language.md" as const;
 export type ContentReviewVerdict = (typeof CONTENT_REVIEW_VERDICTS)[number];
+export type ContentReviewStage = (typeof CONTENT_REVIEW_STAGES)[number];
 export type ContentReviewScope = "session" | "module";
 
 export interface PreparedContentReview {
@@ -39,7 +43,7 @@ export interface PreparedContentReview {
   id: string;
   contentHash: string;
   packetDirectory: string;
-  firstContactPacketPath: string;
+  novicePacketPath: string;
   blindPacketPath: string;
   consistencyPacketPath: string;
 }
@@ -47,6 +51,7 @@ export interface PreparedContentReview {
 export interface ContentReviewRecord {
   scope: ContentReviewScope;
   id: string;
+  stage: ContentReviewStage;
   contentHash: string;
   verdict: ContentReviewVerdict;
   reviewedAt: string;
@@ -57,19 +62,24 @@ export interface ContentReviewStatus {
   scope: ContentReviewScope;
   id: string;
   contentHash: string;
-  record: ContentReviewRecord | null;
+  reviews: Record<
+    ContentReviewStage,
+    { record: ContentReviewRecord | null; current: boolean }
+  >;
   current: boolean;
 }
 
 export interface ContentReviewAttestation {
-  schemaVersion: 1;
+  schemaVersion: 2;
   scope: ContentReviewScope;
   id: string;
   contentHash: string;
   verdict: "PASS";
-  reviewedAt: string;
   attestedAt: string;
-  reportSha256: string;
+  reviews: Record<
+    ContentReviewStage,
+    { verdict: "PASS"; reviewedAt: string; reportSha256: string }
+  >;
   protocol: typeof CONTENT_REVIEW_PROTOCOL;
 }
 
@@ -79,8 +89,11 @@ export interface WrittenContentReviewAttestation {
 }
 
 interface ContentReviewState {
-  schemaVersion: 1;
-  records: Record<string, ContentReviewRecord>;
+  schemaVersion: 2;
+  records: Record<
+    string,
+    Partial<Record<ContentReviewStage, ContentReviewRecord>>
+  >;
 }
 
 interface ReviewTarget {
@@ -99,7 +112,6 @@ interface ReviewTarget {
 type ReviewFileRole = "learner" | "consistency";
 type ReviewPacketSelection =
   | "context"
-  | "first-contact"
   | "blind"
   | "consistency";
 
@@ -109,10 +121,10 @@ interface ReviewFile {
   role: ReviewFileRole;
 }
 
-interface FirstContactDocument {
+interface NoviceOpeningDocument {
   absolutePath: string;
   relativePath: string;
-  source: Buffer | null;
+  opening: string;
 }
 
 const inlineTextExtensions = new Set([
@@ -191,17 +203,14 @@ export async function prepareContentReview(
     "packets",
     `${scope}-${id}-${contentHash.slice(0, 12)}`
   );
-  const firstContactPacketPath = path.join(
-    packetDirectory,
-    "00-first-contact.md"
-  );
+  const novicePacketPath = path.join(packetDirectory, "00-novice.md");
   const blindPacketPath = path.join(packetDirectory, "01-blind.md");
   const consistencyPacketPath = path.join(packetDirectory, "02-consistency.md");
 
   await mkdir(packetDirectory, { recursive: true });
   await writeFile(
-    firstContactPacketPath,
-    await buildFirstContactPacket(root, target),
+    novicePacketPath,
+    await buildNovicePacket(root, target),
     "utf8"
   );
   await writeFile(
@@ -220,7 +229,7 @@ export async function prepareContentReview(
     id,
     contentHash,
     packetDirectory,
-    firstContactPacketPath,
+    novicePacketPath,
     blindPacketPath,
     consistencyPacketPath
   };
@@ -228,6 +237,7 @@ export async function prepareContentReview(
 
 export async function recordContentReview(
   root: string,
+  stage: ContentReviewStage,
   scope: ContentReviewScope,
   id: string,
   verdict: ContentReviewVerdict,
@@ -235,7 +245,7 @@ export async function recordContentReview(
 ): Promise<ContentReviewRecord> {
   const prepared = await prepareContentReview(root, scope, id);
   const report = await readFile(path.resolve(sourceReportPath), "utf8");
-  validateReport(report, verdict);
+  validateReport(stage, report, verdict);
 
   const reportDirectory = path.join(
     getAuthoringDirectory(root),
@@ -245,7 +255,7 @@ export async function recordContentReview(
   await mkdir(reportDirectory, { recursive: true });
   const reportPath = path.join(
     reportDirectory,
-    `${scope}-${id}-${prepared.contentHash.slice(0, 12)}.md`
+    `${scope}-${id}-${stage}-${prepared.contentHash.slice(0, 12)}.md`
   );
   await writeFile(reportPath, ensureTrailingNewline(report), "utf8");
 
@@ -253,12 +263,17 @@ export async function recordContentReview(
   const record: ContentReviewRecord = {
     scope,
     id,
+    stage,
     contentHash: prepared.contentHash,
     verdict,
     reviewedAt: new Date().toISOString(),
     reportPath: path.relative(root, reportPath)
   };
-  state.records[reviewKey(scope, id)] = record;
+  const key = reviewKey(scope, id);
+  state.records[key] = {
+    ...(state.records[key] ?? {}),
+    [stage]: record
+  };
   await saveContentReviewState(root, state);
   return record;
 }
@@ -271,13 +286,28 @@ export async function getContentReviewStatus(
   const target = await resolveTarget(root, scope, id);
   const contentHash = await hashReviewTarget(root, target);
   const state = await loadContentReviewState(root);
-  const record = state.records[reviewKey(scope, id)] ?? null;
+  const records = state.records[reviewKey(scope, id)] ?? {};
+  const noviceRecord = records.novice ?? null;
+  const consistencyRecord = records.consistency ?? null;
+  const reviews = {
+    novice: {
+      record: noviceRecord,
+      current: noviceRecord?.contentHash === contentHash
+    },
+    consistency: {
+      record: consistencyRecord,
+      current: consistencyRecord?.contentHash === contentHash
+    }
+  };
   return {
     scope,
     id,
     contentHash,
-    record,
-    current: record?.contentHash === contentHash
+    reviews,
+    current: CONTENT_REVIEW_STAGES.every(
+      (stage) =>
+        reviews[stage].current && reviews[stage].record?.verdict === "PASS"
+    )
   };
 }
 
@@ -287,23 +317,46 @@ export async function writeContentReviewAttestation(
   id: string
 ): Promise<WrittenContentReviewAttestation> {
   const status = await getContentReviewStatus(root, scope, id);
-  if (!status.record || !status.current || status.record.verdict !== "PASS") {
+  if (!status.current) {
     throw new Error(
-      `Для ${scope} ${id} нужен актуальный записанный content-review PASS.`
+      `Для ${scope} ${id} нужны два актуальных content-review PASS: novice и consistency.`
     );
   }
 
-  const reportPath = path.resolve(root, status.record.reportPath);
-  const report = await readFile(reportPath);
+  const noviceRecord = status.reviews.novice.record;
+  const consistencyRecord = status.reviews.consistency.record;
+  if (!noviceRecord || !consistencyRecord) {
+    throw new Error(
+      `Для ${scope} ${id} нужны два актуальных content-review PASS: novice и consistency.`
+    );
+  }
+  const noviceReport = await readFile(path.resolve(root, noviceRecord.reportPath));
+  const consistencyReport = await readFile(
+    path.resolve(root, consistencyRecord.reportPath)
+  );
   const value: ContentReviewAttestation = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     scope,
     id,
     contentHash: status.contentHash,
     verdict: "PASS",
-    reviewedAt: status.record.reviewedAt,
     attestedAt: new Date().toISOString(),
-    reportSha256: createHash("sha256").update(report).digest("hex"),
+    reviews: {
+      novice: {
+        verdict: "PASS",
+        reviewedAt: noviceRecord.reviewedAt,
+        reportSha256: createHash("sha256")
+          .update(noviceReport)
+          .digest("hex")
+      },
+      consistency: {
+        verdict: "PASS",
+        reviewedAt: consistencyRecord.reviewedAt,
+        reportSha256: createHash("sha256")
+          .update(consistencyReport)
+          .digest("hex")
+      }
+    },
     protocol: CONTENT_REVIEW_PROTOCOL
   };
   const outputPath = path.join(
@@ -324,6 +377,13 @@ export function parseContentReviewScope(value: string): ContentReviewScope {
   throw new Error("Scope должен быть session или module.");
 }
 
+export function parseContentReviewStage(value: string): ContentReviewStage {
+  if (value === "novice" || value === "consistency") {
+    return value;
+  }
+  throw new Error("Stage должен быть novice или consistency.");
+}
+
 export function parseContentReviewVerdict(value: string): ContentReviewVerdict {
   if (value === "PASS" || value === "NEEDS_REWRITE") {
     return value;
@@ -337,10 +397,14 @@ export function formatPreparedContentReview(
   return [
     `Content review packet готов для ${prepared.scope} ${prepared.id}.`,
     `Hash: ${prepared.contentHash}.`,
-    `1. First contact: ${prepared.firstContactPacketPath}.`,
-    `2. Blind pass: ${prepared.blindPacketPath}.`,
-    `3. Consistency pass: ${prepared.consistencyPacketPath}.`,
-    "Запустите отдельного subagent с fork_turns=none. Он должен прочитать packets строго в порядке 00 → 01 → 02 и зафиксировать выводы каждого этапа до открытия следующего."
+    `Novice packet: ${prepared.novicePacketPath}.`,
+    `Consistency blind packet: ${prepared.blindPacketPath}.`,
+    `Consistency evidence packet: ${prepared.consistencyPacketPath}.`,
+    "Запустите ДВУХ независимых fresh subagents с fork_turns=none.",
+    "1. Novice-agent получает и читает только 00-novice.md; не передавайте ему 01, 02, профили, rubric, авторские рассуждения или поздний текст.",
+    "2. Другой consistency-agent не получает novice report. Он читает только 01-blind.md, фиксирует reconstruction, затем открывает 02-consistency.md.",
+    `Запись novice: pnpm author:content-review --record novice ${prepared.scope} ${prepared.id} PASS|NEEDS_REWRITE --report <path>.`,
+    `Запись consistency: pnpm author:content-review --record consistency ${prepared.scope} ${prepared.id} PASS|NEEDS_REWRITE --report <path>.`
   ].join("\n");
 }
 
@@ -461,10 +525,10 @@ async function hashReviewTarget(root: string, target: ReviewTarget): Promise<str
   hash.update(languageContract.source);
   hash.update("\0");
 
-  for (const document of await collectFirstContactDocuments(root, target)) {
-    hash.update(`first-contact:${document.relativePath}`);
+  for (const document of await collectNoviceOpeningDocuments(root, target)) {
+    hash.update(`novice-opening:${document.relativePath}`);
     hash.update("\0");
-    hash.update(document.source ?? "<missing>");
+    hash.update(document.opening);
     hash.update("\0");
   }
 
@@ -524,204 +588,172 @@ async function hashReviewTarget(root: string, target: ReviewTarget): Promise<str
   return hash.digest("hex");
 }
 
-async function buildFirstContactPacket(
+async function buildNovicePacket(
   root: string,
   target: ReviewTarget
 ): Promise<string> {
   const sections = [
-    "# First contact learner pass",
+    "# Novice first-contact pass",
     "",
     "## Reviewer contract",
     "",
-    "Вы впервые видите проверяемый фрагмент учебного маршрута. Читайте файлы ниже строго по порядку и опирайтесь только на показанный learner-facing текст.",
-    describeFirstContactCoverage(target),
-    "Для каждого показанного learner README сначала прочитайте только заголовок и вступление до первого формального outcome/scope-раздела. Если такая граница не размечена, остановитесь после первых 2–4 абзацев. Зафиксируйте first impression и только затем продолжайте этот файл.",
-    "До открытия других packet письменно зафиксируйте: где вы оказались, зачем тема нужна, на какой знакомый опыт опирается объяснение, какой вопрос ведёт материал и что осталось неясным.",
-    "Отдельно отметьте cold open без подводки, термины до их бытового или предметного якоря, резкие переходы и машинный язык. Для каждого замечания сохраните точную цитату, эффект для учащегося и тип требуемого исправления.",
-    "Оцените раздельно только те уровни входа, которые перечислены в scope note выше. Удачный верхнеуровневый README не компенсирует cold open самой карточки; позднее объяснение не исправляет первое впечатление задним числом.",
-    "Не открывайте `01-blind.md`, `02-consistency.md` или любые другие файлы, пока first-contact разбор не записан.",
+    "Вы — fresh reviewer без истории генерации и с ровно теми входными знаниями, которые объявлены ниже. Вам физически показаны только вступления learner README до author marker; поздний текст намеренно отсутствует.",
+    describeNoviceCoverage(target),
+    "Не достраивайте пропуски из собственных экспертных знаний. Если смысл можно восстановить только потому, что вы уже знаете предмет или API, это finding, а не доказательство понятности.",
+    "Построчно проверьте указательные ссылки (`такой`, `этот`, `похожий`, `здесь` и аналогичные): назовите точный antecedent, который уже появился до ссылки. Если его нет или вариантов несколько, зафиксируйте разрыв.",
+    "Составьте список каждого центрального identifier, API, команды и термина в порядке первого появления. Для каждого укажите место, где до использования объяснены его роль и происхождение. Простого узнавания имени reviewer недостаточно.",
+    "Для каждого ведущего примера восстановите начальное состояние, событие или действие и наблюдаемый результат. Если хотя бы одно звено отсутствует, учащийся не может проверить причинную связь по opening.",
+    "Позднее объяснение не исправляет opening задним числом. Центральный identifier/API, использованный без доступного введения и необходимый для понимания ведущего примера, — MAJOR и требует NEEDS_REWRITE.",
+    "Не открывайте `01-blind.md`, `02-consistency.md`, repository files, profiles, rubric, hints или solution. Не меняйте файлы.",
     "",
-    "## Learner-facing route",
+    "## Declared learner baseline",
     "",
-    await renderFirstContactDocuments(root, target)
+    renderNoviceBaseline(target),
+    "",
+    "## Previous learner-visible result",
+    "",
+    renderPreviousLearnerSummary(target),
+    "",
+    "## Opening excerpts",
+    "",
+    await renderNoviceOpeningDocuments(root, target),
+    "",
+    "## Required report format",
+    "",
+    `# Novice content review: ${target.scope} ${target.id}`,
+    "",
+    "Verdict: PASS|NEEDS_REWRITE",
+    "",
+    "## Opening reconstruction",
+    "",
+    "Где оказался учащийся, на что опирается вступление, какой вопрос ведёт материал; для каждого примера — initial state, event/action и observation.",
+    "",
+    "## Reference audit",
+    "",
+    "Каждая указательная ссылка и её однозначный antecedent, появившийся раньше.",
+    "",
+    "## Identifier and API audit",
+    "",
+    "Каждый центральный identifier/API/термин в порядке появления и точное место его доступного введения. Отметьте места, понятные только благодаря экспертным знаниям reviewer.",
+    "",
+    "## Findings",
+    "",
+    "Каждый finding: severity BLOCKER|MAJOR|MINOR, точная цитата, learner effect и требуемый тип исправления. Не дописывайте материал за автора.",
+    "",
+    "## Verdict rationale",
+    "",
+    "PASS допустим только без открытых BLOCKER и MAJOR; неизвестный центральный identifier/API является MAJOR."
   ];
 
   return ensureTrailingNewline(sections.join("\n"));
 }
 
-function describeFirstContactCoverage(target: ReviewTarget): string {
+function describeNoviceCoverage(target: ReviewTarget): string {
   const startsCourse = target.targetSessions[0]?.index === 0;
   if (startsCourse) {
-    return "Scope note: это начало курса, поэтому packet показывает course opening, module opening и проверяемую session. Оцените все три уровня.";
+    return "Scope note: это начало курса, поэтому packet показывает openings курса, module и проверяемых sessions. Оцените каждый уровень отдельно.";
   }
   if (target.scope === "module") {
-    return "Scope note: это не первая глава курса. Корневой README намеренно не повторяется: учащийся приходит сюда через предыдущую карточку. Оцените handoff, module opening и sessions; отсутствие course opening в этом packet не является finding.";
+    return "Scope note: это последующая глава. Packet показывает learner-visible итог предыдущей карточки, opening module и openings его published sessions. Корневой README намеренно отсутствует.";
   }
-  return "Scope note: это не первая карточка курса. Корневой README намеренно не повторяется: учащийся приходит сюда через предыдущую карточку. Оцените module opening, handoff и session opening; отсутствие course opening в этом packet не является finding.";
+  return "Scope note: это последующая карточка. Packet показывает learner-visible итог предыдущей карточки, opening её module и opening текущей session. Корневой README намеренно отсутствует.";
 }
 
-async function collectFirstContactDocuments(
+function renderNoviceBaseline(target: ReviewTarget): string {
+  return [
+    `Audience: ${target.manifest.audience}`,
+    `Assumed concepts: ${formatConcepts(target.manifest.assumedConcepts)}`
+  ].join("\n");
+}
+
+function renderPreviousLearnerSummary(target: ReviewTarget): string {
+  if (!target.previous) {
+    return "Это первый материал курса; предыдущего результата нет.";
+  }
+  return [
+    `Title: ${target.previous.definition.title}`,
+    `Outcome: ${target.previous.definition.outcome}`,
+    `DONE: ${target.previous.definition.done}`
+  ].join("\n");
+}
+
+async function collectNoviceOpeningDocuments(
   root: string,
   target: ReviewTarget
-): Promise<FirstContactDocument[]> {
-  const documents: FirstContactDocument[] = [];
+): Promise<NoviceOpeningDocument[]> {
+  const documents: NoviceOpeningDocument[] = [];
   const seen = new Set<string>();
   const first = target.targetSessions[0];
   if (!first) {
     return documents;
   }
 
-  const addStandalone = async (absolutePath: string): Promise<void> => {
+  const addReadme = async (absolutePath: string): Promise<void> => {
     if (seen.has(absolutePath)) {
       return;
     }
     seen.add(absolutePath);
-    let source: Buffer | null;
+    let source: string;
     try {
-      source = await readFile(absolutePath);
+      source = await readFile(absolutePath, "utf8");
     } catch (error) {
-      if (isNodeError(error) && error.code === "ENOENT") {
-        source = null;
-      } else {
-        throw error;
-      }
+      throw new Error(
+        `Не удалось прочитать обязательный learner README ${absolutePath}: ${formatError(error)}`
+      );
+    }
+    const markerIndex = source.indexOf(CONTENT_REVIEW_OPENING_MARKER);
+    if (markerIndex < 0) {
+      throw new Error(
+        `В обязательном learner README ${absolutePath} отсутствует marker ${CONTENT_REVIEW_OPENING_MARKER}. Разместите его сразу после opening.`
+      );
+    }
+    if (source.lastIndexOf(CONTENT_REVIEW_OPENING_MARKER) !== markerIndex) {
+      throw new Error(
+        `В обязательном learner README ${absolutePath} marker ${CONTENT_REVIEW_OPENING_MARKER} должен встречаться ровно один раз.`
+      );
+    }
+    const opening = source.slice(0, markerIndex).trimEnd();
+    if (!opening.trim()) {
+      throw new Error(
+        `Opening перед marker ${CONTENT_REVIEW_OPENING_MARKER} в ${absolutePath} пуст.`
+      );
     }
     documents.push({
       absolutePath,
       relativePath: toPortablePath(path.relative(root, absolutePath)),
-      source
+      opening
     });
-  };
-
-  const addSessionFiles = async (
-    session: FlatSession,
-    selection: "context" | "first-contact"
-  ): Promise<void> => {
-    const directory = getSessionDirectory(root, session);
-    const files = (await listReviewFiles(directory, session))
-      .filter(
-        (file) =>
-          selectedForPacket(file, selection) &&
-          !isSensitiveFirstContactFile(file.relativeToSession)
-      )
-      .sort(compareFirstContactFiles);
-    for (const file of files) {
-      if (seen.has(file.absolutePath)) {
-        continue;
-      }
-      seen.add(file.absolutePath);
-      documents.push({
-        absolutePath: file.absolutePath,
-        relativePath: toPortablePath(path.relative(root, file.absolutePath)),
-        source: await readFile(file.absolutePath)
-      });
-    }
   };
 
   const startsCourse = first.index === 0;
 
-  if (target.scope === "module") {
-    if (startsCourse) {
-      await addStandalone(path.join(root, "README.md"));
-    }
-    if (target.previous) {
-      await addSessionFiles(target.previous, "context");
-    }
-    await addStandalone(path.join(getModuleDirectory(root, first), "README.md"));
-  } else {
-    if (startsCourse) {
-      await addStandalone(path.join(root, "README.md"));
-    }
-    await addStandalone(path.join(getModuleDirectory(root, first), "README.md"));
-    if (target.previous) {
-      await addSessionFiles(target.previous, "context");
-    }
+  if (startsCourse) {
+    await addReadme(path.join(root, "README.md"));
   }
+  await addReadme(path.join(getModuleDirectory(root, first), "README.md"));
 
   for (const session of target.targetSessions) {
-    await addSessionFiles(session, "first-contact");
+    await addReadme(path.join(getSessionDirectory(root, session), "README.md"));
   }
 
   return documents;
 }
 
-async function renderFirstContactDocuments(
+async function renderNoviceOpeningDocuments(
   root: string,
   target: ReviewTarget
 ): Promise<string> {
-  const documents = await collectFirstContactDocuments(root, target);
+  const documents = await collectNoviceOpeningDocuments(root, target);
   if (documents.length === 0) {
-    return "(no learner-facing files)";
+    return "(no opening excerpts)";
   }
 
   const sections: string[] = [];
   for (const document of documents) {
     const heading = `### File: ${document.relativePath}`;
-    if (document.source === null) {
-      sections.push(
-        heading,
-        "",
-        "[missing learner-facing entry file]",
-        "",
-      );
-      continue;
-    }
-    if (
-      isInlineTextFile(document.relativePath) &&
-      document.source.byteLength <= maxInlineBytes
-    ) {
-      sections.push(
-        heading,
-        "",
-        "~~~~",
-        document.source.toString("utf8").trimEnd(),
-        "~~~~",
-        ""
-      );
-    } else {
-      const digest = createHash("sha256")
-        .update(document.source)
-        .digest("hex");
-      sections.push(
-        heading,
-        "",
-        `[not inlined: ${document.source.byteLength} bytes, sha256=${digest}]`,
-        "",
-      );
-    }
+    sections.push(heading, "", "~~~~", document.opening, "~~~~", "");
   }
   return sections.join("\n").trimEnd();
-}
-
-function compareFirstContactFiles(left: ReviewFile, right: ReviewFile): number {
-  const rankDifference =
-    firstContactFileRank(left.relativeToSession) -
-    firstContactFileRank(right.relativeToSession);
-  return rankDifference !== 0
-    ? rankDifference
-    : left.relativeToSession.localeCompare(right.relativeToSession);
-}
-
-function firstContactFileRank(relativePath: string): number {
-  const name = path.posix.basename(relativePath).toLowerCase();
-  const contextOrder = [
-    "readme.md",
-    "task.md",
-    "lab.md",
-    "worksheet.md",
-    "quiz.md"
-  ];
-  const index = contextOrder.indexOf(name);
-  return index >= 0 ? index : contextOrder.length;
-}
-
-function isSensitiveFirstContactFile(relativePath: string): boolean {
-  const name = path.posix.basename(relativePath).toLowerCase();
-  return (
-    name === "quiz.json" ||
-    name === "rubric.md" ||
-    isHiddenAuthorSupportFile(relativePath)
-  );
 }
 
 function isHiddenAuthorSupportFile(relativePath: string): boolean {
@@ -774,25 +806,21 @@ async function buildBlindPacket(
   contentHash: string
 ): Promise<string> {
   const sections = [
-    "# Blind learner pass",
+    "# Consistency reviewer: blind learner pass",
     "",
     metadataBlock(target, contentHash),
     "",
     "## Reviewer contract",
     "",
-    "Открывайте этот пакет только после того, как first-contact разбор по `00-first-contact.md` письменно зафиксирован.",
-    "Работайте как учащийся с заявленными входными знаниями. У вас нет истории генерации материала и авторских объяснений.",
+    "Это первый packet независимого consistency-reviewer. У вас нет истории генерации, novice report, авторских объяснений или findings другого агента.",
+    "Работайте как учащийся с заявленными входными знаниями. Не открывайте `00-novice.md`: novice-review выполняет другой fresh agent.",
     "Сначала письменно зафиксируйте: чему учит материал, причинную модель, порядок примеров, точное задание, ожидаемый evidence, DONE и всё, что осталось неясным.",
     "Отдельно отметьте, можно ли отличить исходный факт, допущение, ожидаемый результат, наблюдение и вывод; для практики проверьте preflight, границы безопасного выполнения, stop conditions и cleanup/rollback.",
-    "Не открывайте `02-consistency.md`, пока этот blind-разбор не сформулирован. Не изменяйте файлы и не ищите course-support, hints, quiz keys или solutions.",
+    "Не открывайте `02-consistency.md`, пока этот blind-разбор не сформулирован. Не изменяйте файлы и не ищите course-support, hints, quiz keys, solutions или novice report.",
     "",
-    "## Course context",
+    "## Declared learner baseline",
     "",
-    renderCourseContext(target),
-    "",
-    "## Active profile contracts",
-    "",
-    await renderProfileContext(root, target),
+    renderNoviceBaseline(target),
     "",
     "## Canonical course context",
     "",
@@ -821,9 +849,9 @@ async function buildBlindPacket(
   sections.push("", "## Next contract", "");
   sections.push(
     target.next
-      ? renderSessionSummary(target.next)
+      ? renderLearnerVisibleSessionSummary(target.next)
       : target.nextRoadmap
-        ? renderRoadmapSummary(target.nextRoadmap)
+        ? renderLearnerVisibleRoadmapSummary(target.nextRoadmap)
         : "Это последний шаг курса."
   );
 
@@ -842,10 +870,11 @@ async function buildConsistencyPacket(
     "",
     "## Reviewer contract",
     "",
-    "Открывайте этот пакет только после письменно зафиксированных first-contact и blind learner-pass. Теперь сопоставьте собственное понимание с manifest, rubric, acceptance tests и соседними карточками.",
+    "Открывайте этот packet только после письменно зафиксированного learner reconstruction по `01-blind.md`. Теперь сопоставьте собственное понимание с manifest, profiles, rubric, acceptance tests и соседними карточками.",
+    "Вы не должны получать или искать novice report: novice и consistency verdict дают два независимых fresh agents.",
     "Проверьте prerequisites, причинные переходы, соответствие README/rubric/checks/evidence, реалистичность 30–60 минут и естественный handoff к следующей теме.",
     "Проверьте первое впечатление и язык: cold open без контекста у первого материала курса или главы, термины до понятного якоря, резкие переходы и машинную спецификационную прозу. Такой cold open или системно нечитаемый язык — MAJOR; отдельная тяжёлая фраза, не мешающая модели, — MINOR.",
-    "Сверьте отдельно openings курса, module и session с first-contact заметками. Не засчитывайте хороший верхнеуровневый README или позднее объяснение как исправление холодного начала карточки.",
+    "Проверьте openings курса, module и session по собственному blind reconstruction. Не засчитывайте хороший верхнеуровневый README или позднее объяснение как исправление холодного начала карточки.",
     "Каждое языковое замечание обязано привести точную цитату, описать эффект для учащегося и назвать тип исправления, не переписывая материал за автора.",
     "Для измерений и лабораторных работ убедитесь, что воспроизводимость, источник данных, допустимая область воздействия, stop conditions и cleanup/rollback описаны, а ожидаемое не выдано за фактически измеренное.",
     "Reviewer остаётся read-only и возвращает отчёт, а не переписывает учебный материал.",
@@ -898,25 +927,21 @@ async function buildConsistencyPacket(
     "",
     "Verdict: PASS|NEEDS_REWRITE",
     "",
-    "## First contact and language",
-    "",
-    "Раздельно оцените представленные в `00-first-contact.md` уровни входа по first impression до формальных outcome/scope-разделов. Course opening оценивается только тогда, когда scope note включает корневой README; его намеренное отсутствие у последующей карточки или главы не является finding. Зафиксируйте, где и зачем оказался учащийся, какой знакомый опыт и ведущий вопрос он нашёл; cold open, преждевременный jargon, резкие переходы и машинную прозу. Для каждого finding: точная цитата, learner effect и fix type.",
-    "",
     "## Learner reconstruction",
     "",
     "Что reviewer понял без авторского контекста.",
     "",
-    "## Continuity",
+    "## Continuity and profiles",
     "",
     "Связь prerequisites → текущая идея → следующий шаг.",
-    "",
-    "## Findings",
-    "",
-    "Каждый finding: severity BLOCKER|MAJOR|MINOR, evidence и требуемый тип исправления. Не пишите готовое решение упражнения.",
     "",
     "## Evidence and safety",
     "",
     "Достаточность и воспроизводимость evidence; корректность статусов fact/assumption/expected/observed/inference; для практики — preflight, scope, stop conditions и cleanup/rollback.",
+    "",
+    "## Findings",
+    "",
+    "Каждый finding: severity BLOCKER|MAJOR|MINOR, evidence и требуемый тип исправления. Не пишите готовое решение упражнения.",
     "",
     "## Verdict rationale",
     "",
@@ -986,6 +1011,26 @@ function renderSessionSummary(session: FlatSession): string {
     `requires=[${definition.requires.join(", ")}]`,
     `introduces=[${definition.introduces.join(", ")}]`,
     `defers=[${definition.defers.join(", ")}]`
+  ].join("; ");
+}
+
+function renderLearnerVisibleSessionSummary(session: FlatSession): string {
+  const definition = session.definition;
+  return [
+    `${definition.id}: ${definition.title}`,
+    `outcome=${definition.outcome}`,
+    `done=${definition.done}`
+  ].join("; ");
+}
+
+function renderLearnerVisibleRoadmapSummary(
+  session: FlatRoadmapSession
+): string {
+  const definition = session.definition;
+  return [
+    `${definition.id}: ${definition.title}`,
+    `releaseStatus=${definition.releaseStatus ?? "published"}`,
+    `outcome=${definition.outcome}`
   ].join("; ");
 }
 
@@ -1156,12 +1201,6 @@ function selectedForPacket(
 ): boolean {
   if (selection === "context") {
     return file.role === "learner" && isContextFile(file.relativeToSession);
-  }
-  if (selection === "first-contact") {
-    return (
-      file.role === "learner" &&
-      !isSensitiveFirstContactFile(file.relativeToSession)
-    );
   }
   if (selection === "blind") {
     return file.role === "learner";
@@ -1342,10 +1381,13 @@ function uniqueSessions(values: Array<FlatSession | null>): FlatSession[] {
 async function loadContentReviewState(root: string): Promise<ContentReviewState> {
   const statePath = getContentReviewStatePath(root);
   if (!(await fileExists(statePath))) {
-    return { schemaVersion: 1, records: {} };
+    return { schemaVersion: 2, records: {} };
   }
   const value = JSON.parse(await readFile(statePath, "utf8")) as unknown;
-  if (!isRecord(value) || value.schemaVersion !== 1 || !isRecord(value.records)) {
+  if (isRecord(value) && value.schemaVersion === 1) {
+    return { schemaVersion: 2, records: {} };
+  }
+  if (!isRecord(value) || value.schemaVersion !== 2 || !isRecord(value.records)) {
     throw new Error(`Некорректная структура ${statePath}.`);
   }
   return value as unknown as ContentReviewState;
@@ -1366,7 +1408,11 @@ async function saveContentReviewState(
   await rename(temporaryPath, statePath);
 }
 
-function validateReport(report: string, verdict: ContentReviewVerdict): void {
+function validateReport(
+  stage: ContentReviewStage,
+  report: string,
+  verdict: ContentReviewVerdict
+): void {
   const verdictMatch = report.match(/^Verdict:\s*(PASS|NEEDS_REWRITE)\s*$/m);
   if (!verdictMatch) {
     throw new Error("Report должен содержать строку Verdict: PASS|NEEDS_REWRITE.");
@@ -1376,14 +1422,23 @@ function validateReport(report: string, verdict: ContentReviewVerdict): void {
       `Verdict команды ${verdict} не совпадает с report ${verdictMatch[1]}.`
     );
   }
-  for (const heading of [
-    "## First contact and language",
-    "## Learner reconstruction",
-    "## Continuity",
-    "## Findings",
-    "## Evidence and safety",
-    "## Verdict rationale"
-  ]) {
+  const headings =
+    stage === "novice"
+      ? [
+          "## Opening reconstruction",
+          "## Reference audit",
+          "## Identifier and API audit",
+          "## Findings",
+          "## Verdict rationale"
+        ]
+      : [
+          "## Learner reconstruction",
+          "## Continuity and profiles",
+          "## Evidence and safety",
+          "## Findings",
+          "## Verdict rationale"
+        ];
+  for (const heading of headings) {
     if (!report.split(/\r?\n/).includes(heading)) {
       throw new Error(`Report не содержит обязательный раздел ${heading}.`);
     }

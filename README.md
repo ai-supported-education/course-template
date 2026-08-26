@@ -18,6 +18,8 @@ module, этот корневой README и repository metadata, затем за
 Подсказки, ключи quiz и reference solutions живут в Git ref `course-support`, а не
 рядом с упражнением. Это предотвращает случайные спойлеры при работе в IDE.
 
+<!-- content-review:opening:end -->
+
 ## Создать новый курс
 
 Нажмите **Use this template** на GitHub, затем в новом репозитории:
@@ -60,12 +62,13 @@ GitHub переносит из template только default branch, поэто�
     pnpm author:content-review session 01-01
     pnpm author:content-review module 01
 
-Родительский Codex запускает нового subagent без истории генерации. Reviewer
-сначала читает first-contact маршрут и фиксирует качество входа и языка, затем
-восстанавливает модель по blind packet и только после этого проверяет связность с
-profiles, rubric, checks/evidence и соседними карточками. CLI сам агента не
-запускает; полный verdict и report хранятся локально в `.authoring/`, а команда
-`attest` публикует компактное hash-свидетельство. Подробнее — в
+Родительский Codex запускает двух независимых subagents без истории генерации.
+Novice-reviewer видит только prefixes README до скрытых opening markers и проверяет
+ссылки, незнакомые identifiers и полноту первого примера. Consistency-reviewer
+отдельно восстанавливает полный материал по blind packet и только затем сверяет
+его с profiles, rubric, checks/evidence и соседними карточками. CLI сам агентов не
+запускает; два полных report хранятся локально в `.authoring/`, а команда `attest`
+публикует schema v2 hash-свидетельство двух PASS. Подробнее — в
 [content-review protocol](curriculum/content-review-protocol.md).
 
 ## Стековые правила

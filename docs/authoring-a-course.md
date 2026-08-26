@@ -65,6 +65,16 @@ prefix этого module. Когда следующая карточка ста�
 3. README сессии перед outcome показывает конкретное наблюдение или прежний
    evidence, границу текущего объяснения и вопрос практики.
 
+Завершите смысловой вход каждого опубликованного корневого README, README module и
+README карточки точным скрытым marker:
+
+```markdown
+<!-- content-review:opening:end -->
+```
+
+Он ставится до outcome и подробного объяснения. Не переносите недостающую опору за
+marker: novice-reviewer физически её не увидит.
+
 Не начинайте learner-facing текст с каталога терминов, scope или команд. Эти
 формальные разделы остаются обязательными, но становятся ответом на уже понятный
 вопрос. Не копируйте во все карточки одинаковое `Введение`: используйте предметный
@@ -74,6 +84,13 @@ prefix этого module. Когда следующая карточка ста�
 которого нужно знать manifest, авторский замысел или будущую карточку. Здесь не
 применяется проверка по числу слов, длине предложений или количеству англицизмов:
 важно, выполняет ли текст коммуникативную функцию.
+
+Затем перечитайте только prefix до каждого marker. Для слов «такой», «этот»,
+«похожий» и «здесь» укажите конкретный antecedent выше по тексту. Для центральных
+identifier/API первого code block укажите объявление или предшествующее объяснение
+роли. Если приходится отвечать «это и так понятно» или ссылаться на поздний
+раздел, opening ещё не готов. Первый пример нового API должен содержать начальное
+состояние, событие, роли значимых имён и наблюдаемый результат.
 
 ## 3. Выберите компонуемые profiles
 
@@ -162,7 +179,7 @@ git switch -
 Не записывайте в материал результаты, которых не наблюдали. Если реальную среду
 проверить нельзя, честно ограничьте evidence fixture/simulation.
 
-## 8. Запустите независимого fresh reviewer
+## 8. Запустите двух независимых fresh reviewers
 
 Соберите пакет:
 
@@ -170,24 +187,29 @@ git switch -
 pnpm author:content-review session <id>
 ```
 
-Передайте только пути к packets отдельному subagent с `fork_turns="none"`. Он
-сначала читает только `00-first-contact.md` и фиксирует, понятны ли вход в тему,
-опора и язык. Затем по `01-blind.md` письменно реконструирует материал и только
-после этого открывает `02-consistency.md`, чтобы сверить profiles, concept graph,
-rubric, checks, evidence, safety и соседние карточки. Reviewer read-only.
+Запустите novice-subagent с `fork_turns="none"` и передайте ему только путь к
+`00-novice.md`. Он построчно проверяет opening prefixes, antecedents, identifiers и
+полноту первого примера. Затем независимо запустите consistency-subagent с
+`fork_turns="none"` и передайте только `01-blind.md` и `02-consistency.md`: сначала
+агент реконструирует learner material по 01, затем сверяет profiles, concept graph,
+rubric, checks, evidence, safety и соседние карточки по 02. Оба reviewer read-only;
+не передавайте им авторские рассуждения или отчёт другого агента.
 
 После отчёта:
 
 ```bash
-pnpm author:content-review --record session <id> PASS --report <path>
+pnpm author:content-review --record novice session <id> PASS --report <path>
+pnpm author:content-review --record consistency session <id> PASS --report <path>
 pnpm author:content-review status session <id>
 pnpm author:content-review attest session <id>
 ```
 
-При BLOCKER/MAJOR исправьте материал и используйте нового fresh subagent: старый
-диалог уже знает авторский замысел. После PASS всех карточек повторите процедуру для
-module и запишите module attestation. Raw packets/reports остаются локально в
-`.authoring/`; компактные hash attestations публикуются в `curriculum/reviews/`.
+При BLOCKER/MAJOR исправьте материал и используйте двух новых fresh subagents:
+старые диалоги уже знают авторский замысел. Центральный неизвестный identifier в
+opening остаётся MAJOR, даже если определён ниже marker. После двух PASS всех
+карточек повторите парную процедуру для module и запишите module attestation. Raw
+packets/reports остаются локально в `.authoring/`; публичная schema v2 attestation
+хранит отдельные hash отчётов novice и consistency.
 
 ## 9. Проведите пилот
 

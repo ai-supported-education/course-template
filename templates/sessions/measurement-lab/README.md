@@ -11,6 +11,8 @@
 {{ Сформулируйте измеряемый вопрос и объясните, почему raw artifact нужен раньше
 вывода. Не выдавайте expected за уже увиденный результат. }}
 
+<!-- content-review:opening:end -->
+
 ## Результат и разрешённый scope
 
 Вы соберёте {{ raw artifact }} в {{ localhost/simulation/owned lab }} и отделите

@@ -18,16 +18,25 @@ Runner читает `curriculum/course.json`, разрешает одну акт
 
 Author-side команды не используют learner progress:
 
-- `author:content-review session <id>` — собрать first-contact, blind и consistency
+- `author:content-review session <id>` — собрать novice, blind и consistency
   packets;
 - `author:content-review module <id>` — собрать module packet;
-- `author:content-review --record <scope> <id> PASS|NEEDS_REWRITE --report <path>` — записать verdict с content hash;
-- `author:content-review status <scope> <id>` — проверить актуальность PASS.
+- `author:content-review --record novice <scope> <id> PASS|NEEDS_REWRITE --report <path>` — записать verdict novice-review с content hash;
+- `author:content-review --record consistency <scope> <id> PASS|NEEDS_REWRITE --report <path>` — записать независимый consistency verdict;
+- `author:content-review status <scope> <id>` — проверить актуальность двух PASS.
 - `author:content-review attest <scope> <id>` — опубликовать компактную аттестацию
-  актуального PASS в `curriculum/reviews/`.
+  schema v2 с двумя актуальными PASS в `curriculum/reviews/`.
 
-CLI не запускает агента. Fresh subagent создаёт родительский Codex по правилам
-`AGENTS.md`; локальные packets и records находятся в игнорируемой `.authoring/`.
+CLI не запускает агентов. Родительский Codex создаёт двух fresh subagents по
+правилам `AGENTS.md`: novice получает только `00-novice.md`, consistency — только
+`01-blind.md`, затем `02-consistency.md`. Они не получают отчёты друг друга.
+Локальные packets и records находятся в игнорируемой `.authoring/`.
+
+Все published course/module/session README содержат ровно один marker
+`<!-- content-review:opening:end -->`. `00-novice.md` физически включает только
+prefix до marker; полный README остаётся в blind packet. Protocol id —
+`novice-first-contact-consistency-v4`; записи прежних protocol не считаются
+актуальными.
 
 ## Добавление нового check
 
