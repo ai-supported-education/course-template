@@ -51,6 +51,7 @@ describe("author content review", () => {
     expect(novice).not.toContain("quiz data marker");
     expect(novice).not.toContain("learner draft");
     expect(novice).toContain("каждого центрального identifier, API");
+    expect(novice).toContain("Термин в заголовке не считается объяснённым");
     expect(novice).toContain("начальное состояние, событие или действие");
     expect(novice).toContain("не исправляет opening задним числом");
     expect(novice).toContain("Анонс будущих примеров");
