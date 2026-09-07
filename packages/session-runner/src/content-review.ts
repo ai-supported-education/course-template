@@ -728,6 +728,15 @@ async function hashReviewTarget(root: string, target: ReviewTarget): Promise<str
       hash.update("\0");
     }
   }
+  for (const session of target.targetSessions) {
+    const redacted = await readRedactedAnswerStructure(root, session);
+    if (redacted) {
+      hash.update(`learner-answer-structure:${redacted.path}`);
+      hash.update("\0");
+      hash.update(redacted.source);
+      hash.update("\0");
+    }
+  }
   for (const session of collectPrerequisiteSourceSessions(target)) {
     const absolutePath = path.join(getSessionDirectory(root, session), "README.md");
     hash.update(`prerequisite-source:${session.definition.id}`);
@@ -1780,7 +1789,65 @@ async function renderSelectedFiles(
       }
     }
   }
+  if (selection === "blind" || selection === "consistency") {
+    for (const session of sessions) {
+      const redacted = await readRedactedAnswerStructure(root, session);
+      if (!redacted) {
+        continue;
+      }
+      sections.push(
+        `### Redacted learner-editable structure: ${redacted.path}`,
+        "",
+        "Значения намеренно скрыты: packet показывает реальные object/array keys, но не ответы или learner progress.",
+        "",
+        "~~~~json",
+        redacted.source,
+        "~~~~",
+        ""
+      );
+    }
+  }
   return sections.length > 0 ? sections.join("\n").trimEnd() : "(no files)";
+}
+
+async function readRedactedAnswerStructure(
+  root: string,
+  session: FlatSession
+): Promise<{ path: string; source: string } | null> {
+  const absolutePath = path.join(
+    getSessionDirectory(root, session),
+    "answers.json"
+  );
+  if (!(await fileExists(absolutePath))) {
+    return null;
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(await readFile(absolutePath, "utf8"));
+  } catch (error) {
+    throw new Error(
+      `${session.definition.id}: answers.json должен быть валидным JSON для безопасной публикации его структуры: ${formatError(error)}`
+    );
+  }
+  return {
+    path: toPortablePath(path.relative(root, absolutePath)),
+    source: JSON.stringify(redactLearnerValues(parsed), null, 2)
+  };
+}
+
+function redactLearnerValues(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map((entry) => redactLearnerValues(entry));
+  }
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, entry]) => [
+        key,
+        redactLearnerValues(entry)
+      ])
+    );
+  }
+  return "<learner value redacted>";
 }
 
 function selectedForPacket(

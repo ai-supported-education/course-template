@@ -74,6 +74,8 @@ describe("author content review", () => {
     expect(blind).not.toContain("custom consistency marker");
     expect(blind).not.toContain("private key marker");
     expect(blind).not.toContain("learner draft");
+    expect(blind).toContain("Redacted learner-editable structure");
+    expect(blind).toContain('"reason": "<learner value redacted>"');
     expect(blind).not.toContain("hidden hint marker");
     expect(blind).not.toContain("reference solution marker");
     expect(blind).not.toContain("quiz data marker");
@@ -101,6 +103,7 @@ describe("author content review", () => {
     expect(consistency).toContain("custom consistency marker");
     expect(consistency).not.toContain("private key marker");
     expect(consistency).not.toContain("learner draft");
+    expect(consistency).toContain("Redacted learner-editable structure");
     expect(consistency).not.toContain("hidden hint marker");
     expect(consistency).not.toContain("reference solution marker");
     expect(consistency).toContain("quiz data marker");
@@ -112,6 +115,26 @@ describe("author content review", () => {
     expect(consistency).toContain("не должны получать или искать novice report");
     expect(consistency).toContain("## Continuity and profiles");
     expect(consistency).not.toContain("## First contact and language");
+  });
+
+  it("hashes answer structure without exposing or hashing learner values", async () => {
+    const root = await createWorkspace();
+    const answerPath = path.join(
+      root,
+      "modules/01-test/sessions/01-02/answers.json"
+    );
+    const before = await prepareContentReview(root, "session", "01-02");
+
+    await writeFile(answerPath, '{"reason":"different private value"}\n');
+    const afterValue = await prepareContentReview(root, "session", "01-02");
+    expect(afterValue.contentHash).toBe(before.contentHash);
+
+    await writeFile(
+      answerPath,
+      '{"reason":"different private value","confidence":null}\n'
+    );
+    const afterShape = await prepareContentReview(root, "session", "01-02");
+    expect(afterShape.contentHash).not.toBe(before.contentHash);
   });
 
   it("includes and hashes learner sources for transitive prerequisites", async () => {
