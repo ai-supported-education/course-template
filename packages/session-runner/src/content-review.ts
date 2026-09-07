@@ -170,6 +170,12 @@ interface NoviceOpeningDocument {
   opening: string;
 }
 
+interface AuthorProofDocument {
+  path: string;
+  source: string | null;
+  summary: unknown;
+}
+
 const inlineTextExtensions = new Set([
   ".c",
   ".cc",
@@ -660,6 +666,12 @@ async function hashReviewTarget(root: string, target: ReviewTarget): Promise<str
       hash.update(`toolchain:${document.path}`);
       hash.update("\0");
       hash.update(document.source);
+      hash.update("\0");
+    }
+    for (const document of await loadAuthorProofDocuments(root, target)) {
+      hash.update(`author-proof:${document.path}`);
+      hash.update("\0");
+      hash.update(document.source ?? "MISSING");
       hash.update("\0");
     }
   }
@@ -1427,8 +1439,108 @@ async function renderSubjectAuthorContract(
     "",
     "### Hidden quiz acceptance evidence",
     "",
-    await renderQuizAcceptanceEvidence(root, target.targetSessions)
+    await renderQuizAcceptanceEvidence(root, target.targetSessions),
+    "",
+    "### Recorded author proof evidence",
+    "",
+    await renderAuthorProofEvidence(root, target)
   ].join("\n");
+}
+
+async function loadAuthorProofDocuments(
+  root: string,
+  target: ReviewTarget
+): Promise<AuthorProofDocument[]> {
+  const documents: AuthorProofDocument[] = [];
+  for (const session of target.targetSessions) {
+    if (!session.definition.authorProof) {
+      continue;
+    }
+    const relativePath = toPortablePath(
+      path.join("curriculum", "proofs", `${session.definition.id}.json`)
+    );
+    const absolutePath = path.join(root, relativePath);
+    try {
+      const source = await readFile(absolutePath, "utf8");
+      let summary: unknown;
+      try {
+        summary = sanitizeAuthorProofSummary(JSON.parse(source) as unknown);
+      } catch {
+        summary = { status: "INVALID_JSON" };
+      }
+      documents.push({ path: relativePath, source, summary });
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+        throw error;
+      }
+      documents.push({
+        path: relativePath,
+        source: null,
+        summary: { status: "MISSING" }
+      });
+    }
+  }
+  return documents;
+}
+
+function sanitizeAuthorProofSummary(value: unknown): unknown {
+  if (!isRecord(value)) {
+    return { status: "INVALID_SHAPE" };
+  }
+  const starter = isRecord(value.starter) ? value.starter : {};
+  const solution = isRecord(value.solution) ? value.solution : {};
+  const counterexamples = Array.isArray(value.counterexamples)
+    ? value.counterexamples.map((entry) => {
+        const item = isRecord(entry) ? entry : {};
+        return {
+          status: item.status,
+          patchSha256: item.patchSha256,
+          outputSha256: item.outputSha256
+        };
+      })
+    : [];
+  return {
+    schemaVersion: value.schemaVersion,
+    sessionId: value.sessionId,
+    checkedAt: value.checkedAt,
+    sessionContentHash: value.sessionContentHash,
+    toolchainHash: value.toolchainHash,
+    definitionHash: value.definitionHash,
+    check: value.check,
+    starter: {
+      status: starter.status,
+      outputSha256: starter.outputSha256
+    },
+    solution: {
+      status: solution.status,
+      patchSha256: solution.patchSha256,
+      outputSha256: solution.outputSha256
+    },
+    counterexamples
+  };
+}
+
+async function renderAuthorProofEvidence(
+  root: string,
+  target: ReviewTarget
+): Promise<string> {
+  const documents = await loadAuthorProofDocuments(root, target);
+  if (documents.length === 0) {
+    return "Target не содержит исполняемых карточек с authorProof.";
+  }
+  return documents
+    .map((document) =>
+      [
+        `#### Proof: ${document.path}`,
+        "",
+        "Packet показывает только статусы и hashes; исходный solution, вывод команд и quiz answers не раскрываются.",
+        "",
+        "```json",
+        JSON.stringify(document.summary, null, 2),
+        "```"
+      ].join("\n")
+    )
+    .join("\n\n");
 }
 
 function renderToolchainDocuments(

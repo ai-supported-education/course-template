@@ -248,6 +248,10 @@ counterexample, запускает один acceptance check и публикуе
 Падение starter должно содержать заявленный фрагмент причины; зелёный starter или
 прошедший counterexample блокируют публикацию.
 
+Следующий subject packet включает безопасную запись этого proof: статусы,
+timestamp и hashes, но не patch, вывод команды или готовый ответ. Proof входит в
+content hash; повторный `author:proof` после review честно делает review stale.
+
 Не записывайте в материал результаты, которых не наблюдали. Если реальную среду
 проверить нельзя, честно ограничьте evidence fixture/simulation.
 
