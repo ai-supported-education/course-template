@@ -1,5 +1,5 @@
 import { fileURLToPath } from "node:url";
-import { chmod, mkdir, mkdtemp, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
@@ -296,49 +296,44 @@ describe("course manifest", () => {
     await expect(validatePublishedMaterials(root, [configured])).resolves.toEqual([]);
   });
 
-  it.skipIf(process.platform === "win32")(
-    "rejects a published material that cannot be read",
-    async () => {
-      const root = await mkdtemp(path.join(os.tmpdir(), "published-material-"));
-      const directory = path.join(root, "modules/01-sample/sessions/01-01");
-      await mkdir(directory, { recursive: true });
-      const readme = path.join(directory, "README.md");
-      await writeFile(readme, "# Published\n");
-      await writeFile(path.join(directory, "rubric.md"), "# Rubric\n");
-      await chmod(readme, 0o000);
+  it("rejects an empty published material on every supported platform", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "published-material-"));
+    const directory = path.join(root, "modules/01-sample/sessions/01-01");
+    await mkdir(directory, { recursive: true });
+    const readme = path.join(directory, "README.md");
+    await writeFile(readme, "");
+    await writeFile(path.join(directory, "rubric.md"), "# Rubric\n");
 
-      const module = {
-        id: "01",
-        slug: "sample",
-        title: "Sample",
-        goal: "Sample",
-        sessions: []
-      };
-      const session: FlatSession = {
-        index: 0,
-        module,
-        isCapstone: false,
-        definition: {
-          id: "01-01",
-          title: "Read",
-          minutes: 30,
-          kind: "observe",
-          outcome: "Outcome",
-          done: "Done",
-          checks: ["review"],
-          evidence: { produces: ["artifact"], verifiedBy: ["agent"] },
-          requires: [],
-          introduces: ["one"],
-          defers: []
-        }
-      };
+    const module = {
+      id: "01",
+      slug: "sample",
+      title: "Sample",
+      goal: "Sample",
+      sessions: []
+    };
+    const session: FlatSession = {
+      index: 0,
+      module,
+      isCapstone: false,
+      definition: {
+        id: "01-01",
+        title: "Read",
+        minutes: 30,
+        kind: "observe",
+        outcome: "Outcome",
+        done: "Done",
+        checks: ["review"],
+        evidence: { produces: ["artifact"], verifiedBy: ["agent"] },
+        requires: [],
+        introduces: ["one"],
+        defers: []
+      }
+    };
 
-      await expect(validatePublishedMaterials(root, [session])).resolves.toEqual([
-        expect.stringContaining("README.md")
-      ]);
-      await chmod(readme, 0o600);
-    }
-  );
+    await expect(validatePublishedMaterials(root, [session])).resolves.toEqual([
+      expect.stringContaining("README.md")
+    ]);
+  });
 
   it("rejects an unsafe or colliding capstone id", () => {
     const base = {
