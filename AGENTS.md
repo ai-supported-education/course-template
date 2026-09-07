@@ -84,8 +84,14 @@ acceptance test обязан:
 Соблюдайте `curriculum/authoring-standard.md`. Стековые архитектурные правила не
 переносятся между курсами автоматически: подключайте только профиль нужного стека.
 
+Перед генерацией learner-facing материала в новом курсе выполните обязательный
+roadmap-review: `pnpm author:roadmap-review`. Curriculum-agent и subject-agent
+запускаются независимо с `fork_turns="none"`, получают только свой packet и не
+видят историю генерации либо отчёт другого reviewer. После исправлений оба review
+повторяются новыми агентами, затем записывается schema v3 roadmap attestation.
+
 После генерации или существенного изменения learner-facing материала выполните
-обязательный independent content-review двумя независимыми агентами:
+обязательный independent content-review тремя независимыми агентами:
 
 1. Соберите packet через `pnpm author:content-review session <id>`.
 2. Запустите novice-subagent с `fork_turns="none"`. Сначала передайте только путь
@@ -102,27 +108,36 @@ acceptance test обязан:
    теперь он проходит весь learner-facing материал до DONE и возвращает итоговый
    `PASS` или `NEEDS_REWRITE`. Поздний текст не позволяет смягчить уже сохранённые
    first-contact findings.
-3. Независимо запустите consistency-subagent с `fork_turns="none"`. Он не получает
+3. Независимо запустите subject-subagent с `fork_turns="none"`. Он получает только
+   subject packet, проверяет предметные утверждения и currentness по первичным
+   источникам из `source-ledger.json`, различает ECMAScript, host API, runtime и
+   toolchain и помечает собственные inference.
+4. Независимо запустите consistency-subagent с `fork_turns="none"`. Он не получает
    novice checkpoint или report. Передайте ему `01-blind.md`, дождитесь письменной
    реконструкции материала и только затем откройте `02-consistency.md` для сверки
    rubric, tests, evidence, profiles и соседних карточек. Для prerequisites он
    использует provenance-карту и learner sources из 02, а не предполагает, что
    любой concept обязан быть введён непосредственно в предыдущей карточке.
-4. Не передавайте агентам историю генерации, авторские рассуждения, hints,
+5. Не передавайте агентам историю генерации, авторские рассуждения, hints,
    solution или отчёт другого reviewer. Quiz key может находиться только в
-   `02-consistency.md` как acceptance evidence. Оба reviewer работают read-only и
+   `02-consistency.md` как acceptance evidence. Все reviewers работают read-only и
    возвращают `PASS` или `NEEDS_REWRITE`.
-5. Запишите оба фактических verdict отдельными командами:
+6. Запишите три фактических verdict отдельными командами:
+   `pnpm author:content-review --record subject <session|module> <id> PASS|NEEDS_REWRITE --report <path>`,
    `pnpm author:content-review --record novice <session|module> <id> PASS|NEEDS_REWRITE --report <path>`
    и
    `pnpm author:content-review --record consistency <session|module> <id> PASS|NEEDS_REWRITE --report <path>`.
-6. После исправлений повторите обе проверки двумя новыми fresh subagents. Нельзя
+7. После исправлений повторите все проверки новыми fresh subagents. Нельзя
    продолжать прежний novice checkpoint или прежний consistency reconstruction.
    Позднее объяснение не понижает finding неизвестного центрального identifier во
    opening.
 
-После двойного session PASS всех карточек выполните
-`pnpm author:content-review module <id>` и получите два независимых module PASS.
+До content-review code exercise выполните `pnpm author:proof <id>`. Эта команда
+обязана наблюдать целевое падение starter, PASS минимального solution patch и
+падение хотя бы одного правдоподобного counterexample на одной acceptance test.
+
+После тройного session PASS всех карточек выполните
+`pnpm author:content-review module <id>` и получите три независимых module PASS.
 После них запишите публичную аттестацию командой
 `pnpm author:content-review attest <session|module> <id>`. Без актуальных session и
 module PASS материал не считается готовым к публикации.
@@ -130,5 +145,7 @@ module PASS материал не считается готовым к публ�
 `planned` содержит только roadmap и не проходит content-review. Полный контракт
 сначала переводится в `published` в authoring feature branch, где появляются
 learner files и выполняется review; default branch получает его только вместе с
-актуальными attestations. Module review покрывает текущий published prefix; после
+актуальными attestations. `pnpm author:publication-check` — финальный обязательный
+gate и проверяет roadmap, session/module attestations, toolchain hashes и author
+proofs. Module review покрывает текущий published prefix; после
 публикации следующей карточки он повторяется для расширенного prefix.

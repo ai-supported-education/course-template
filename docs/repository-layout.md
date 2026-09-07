@@ -8,6 +8,8 @@
 │   ├── audience.md                   # опциональный канонический audience context
 │   ├── session-contract.md           # правила 30–60 минут и прогресса
 │   ├── authoring-standard.md         # общий критерий готовности материала
+│   ├── source-ledger.json            # первичные источники и покрываемые concepts
+│   ├── proofs/                       # публичные hashes red/green evidence
 │   └── reviews/                      # публичные hash attestations PASS
 ├── docs/
 │   ├── course-profiles/              # компонуемые общие контракты
@@ -29,7 +31,8 @@
 support/
 ├── hints/<session-id>.json
 ├── quizzes/<session-id>.key.json
-└── solutions/<session-id>/...
+├── solutions/<session-id>.patch
+└── counterexamples/<session-id>-*.patch
 ```
 
 `course-support` не является секретным хранилищем: владелец clone может прочитать
@@ -42,6 +45,10 @@ support/
   результат, а для published-сессий — DONE и checks.
 - `courseContextFiles` перечисляет безопасные документы, которые должны видеть
   все author-side reviewers и изменение которых устаревает attestation.
+- `toolchainFiles` перечисляет package/lock/config files, влияющие на исполняемые
+  checks и технические/content hashes.
+- `source-ledger.json` связывает проверенные первичные источники с concept ids;
+  roadmap и content subject-review используют его независимо.
 - `profiles` выбирает дополнительные контракты, а `evidence` связывает DONE с
   проверяемыми артефактами.
 - README карточки объясняет тему и задаёт упражнение.

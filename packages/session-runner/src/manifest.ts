@@ -4,6 +4,7 @@ import {
   CHECK_LABELS,
   SESSION_RELEASE_STATUSES,
   SESSION_KINDS,
+  TARGETABLE_CHECK_LABELS,
   VERIFICATION_MODES,
   type CourseSessionDefinition,
   type CourseManifest,
@@ -16,10 +17,17 @@ import {
   validateCourseContextPaths
 } from "./course-context.js";
 import { loadCourseProfileDocuments } from "./profiles.js";
+import {
+  sourceLedgerSupports,
+  validateSourceLedger,
+  type SourceLedger
+} from "./source-ledger.js";
+import { loadToolchainDocuments, validateToolchainPaths } from "./toolchain.js";
 import { getSessionDirectory } from "./workspace.js";
 
 const sessionKindSet = new Set<string>(SESSION_KINDS);
 const checkLabelSet = new Set<string>(CHECK_LABELS);
+const targetableCheckLabelSet = new Set<string>(TARGETABLE_CHECK_LABELS);
 const verificationModeSet = new Set<string>(VERIFICATION_MODES);
 const releaseStatusSet = new Set<string>(SESSION_RELEASE_STATUSES);
 
@@ -51,6 +59,29 @@ export async function loadManifest(root: string): Promise<CourseManifest> {
     root,
     manifest.courseContextFiles ?? []
   );
+  await loadToolchainDocuments(root, manifest.toolchainFiles ?? []);
+  if (manifest.reviewProtocol === "roadmap-subject-novice-consistency-v1") {
+    const ledgerPath = path.join(root, "curriculum", "source-ledger.json");
+    let ledger: unknown;
+    try {
+      ledger = JSON.parse(await readFile(ledgerPath, "utf8"));
+    } catch (error) {
+      throw new Error(`Не удалось прочитать ${ledgerPath}: ${formatError(error)}`);
+    }
+    const ledgerProblems = validateSourceLedger(ledger);
+    if (ledgerProblems.length > 0) {
+      throw new Error(`Source ledger не прошёл проверку:\n- ${ledgerProblems.join("\n- ")}`);
+    }
+    const introduced = flattenRoadmap(manifest).flatMap(
+      (session) => session.definition.introduces
+    );
+    const unsupported = sourceLedgerSupports(ledger as SourceLedger, introduced);
+    if (unsupported.length > 0) {
+      throw new Error(
+        `Source ledger не покрывает concepts: ${unsupported.join(", ")}.`
+      );
+    }
+  }
   const materialProblems = await validatePublishedMaterials(
     root,
     flattenManifest(manifest)
@@ -110,10 +141,15 @@ function requiredPublishedFiles(session: SessionDefinition): string[] {
     files.add("answers.json");
   }
   if (session.checks.includes("typecheck")) {
-    files.add("tsconfig.json");
+    files.add(session.checkTargets?.typecheck ?? "tsconfig.json");
   }
-  if (session.checks.includes("unit") || session.checks.includes("integration")) {
-    files.add("exercise.test.tsx");
+  for (const label of ["unit", "integration"] as const) {
+    if (session.checks.includes(label)) {
+      files.add(session.checkTargets?.[label] ?? "exercise.test.tsx");
+    }
+  }
+  if (session.checks.includes("browser") && session.checkTargets?.browser) {
+    files.add(session.checkTargets.browser);
   }
   return [...files];
 }
@@ -140,6 +176,14 @@ export function validateManifest(value: unknown): string[] {
     problems.push("profiles должен быть массивом profile ids");
   }
   problems.push(...validateCourseContextPaths(value.courseContextFiles));
+  problems.push(...validateToolchainPaths(value.toolchainFiles));
+  if (
+    value.reviewProtocol !== undefined &&
+    value.reviewProtocol !== "novice-walkthrough-consistency-v8" &&
+    value.reviewProtocol !== "roadmap-subject-novice-consistency-v1"
+  ) {
+    problems.push(`неизвестный reviewProtocol ${String(value.reviewProtocol)}`);
+  }
 
   if (problems.length > 0) {
     return problems;
@@ -218,6 +262,24 @@ export function validateManifest(value: unknown): string[] {
 
   validateConceptFlow(value, problems);
   validateProfiles(value, problems);
+  if (value.reviewProtocol === "roadmap-subject-novice-consistency-v1") {
+    for (const session of collectRawSessions(value)) {
+      if ((session.releaseStatus ?? "published") === "planned") {
+        continue;
+      }
+      const checks = Array.isArray(session.checks) ? session.checks : [];
+      if (
+        checks.some(
+          (label) => typeof label === "string" && targetableCheckLabelSet.has(label)
+        ) &&
+        session.authorProof === undefined
+      ) {
+        problems.push(
+          `${String(session.id)}: v3 protocol требует authorProof для code exercise`
+        );
+      }
+    }
+  }
 
   return problems;
 }
@@ -275,6 +337,8 @@ function validateSessions(
       for (const publishedOnlyField of [
         "done",
         "checks",
+        "checkTargets",
+        "authorProof",
         "evidence",
         "contentReview"
       ]) {
@@ -316,8 +380,99 @@ function validatePublishedSession(
       }
     }
   }
+  validateCheckTargets(rawSession, id, problems);
+  validateAuthorProof(rawSession, id, problems);
   validateEvidence(rawSession, id, problems);
   validateContentReviewSelection(rawSession, id, problems);
+}
+
+function validateAuthorProof(
+  session: Record<string, unknown>,
+  id: string,
+  problems: string[]
+): void {
+  if (session.authorProof === undefined) {
+    return;
+  }
+  if (!isRecord(session.authorProof)) {
+    problems.push(`${id}: authorProof должен быть объектом`);
+    return;
+  }
+  const proof = session.authorProof;
+  if (
+    typeof proof.check !== "string" ||
+    !targetableCheckLabelSet.has(proof.check)
+  ) {
+    problems.push(`${id}: authorProof.check должен быть targetable check`);
+  } else if (
+    !Array.isArray(session.checks) ||
+    !session.checks.includes(proof.check)
+  ) {
+    problems.push(`${id}: authorProof.check ${proof.check} отсутствует в checks`);
+  }
+  if (
+    typeof proof.expectedStarterFailure !== "string" ||
+    proof.expectedStarterFailure.trim().length === 0
+  ) {
+    problems.push(`${id}: authorProof.expectedStarterFailure обязателен`);
+  }
+  if (
+    typeof proof.solutionPatch !== "string" ||
+    !isPortableRelativePath(proof.solutionPatch)
+  ) {
+    problems.push(`${id}: authorProof.solutionPatch содержит небезопасный путь`);
+  }
+  if (
+    !Array.isArray(proof.counterexamplePatches) ||
+    proof.counterexamplePatches.length === 0
+  ) {
+    problems.push(`${id}: authorProof.counterexamplePatches должен быть непустым массивом`);
+  } else {
+    for (const counterexample of proof.counterexamplePatches) {
+      if (typeof counterexample !== "string" || !isPortableRelativePath(counterexample)) {
+        problems.push(`${id}: authorProof.counterexamplePatches содержит небезопасный путь`);
+      }
+    }
+  }
+}
+
+function validateCheckTargets(
+  session: Record<string, unknown>,
+  id: string,
+  problems: string[]
+): void {
+  if (session.checkTargets === undefined) {
+    const checks = Array.isArray(session.checks) ? session.checks : [];
+    if (checks.includes("browser")) {
+      problems.push(`${id}: check browser требует checkTargets.browser`);
+    }
+    return;
+  }
+  if (!isRecord(session.checkTargets)) {
+    problems.push(`${id}: checkTargets должен быть объектом`);
+    return;
+  }
+
+  const checks = new Set(
+    Array.isArray(session.checks)
+      ? session.checks.filter((label): label is string => typeof label === "string")
+      : []
+  );
+  for (const [label, target] of Object.entries(session.checkTargets)) {
+    if (!targetableCheckLabelSet.has(label)) {
+      problems.push(`${id}: checkTargets содержит неподдерживаемый check ${label}`);
+      continue;
+    }
+    if (typeof target !== "string" || !isPortableRelativePath(target)) {
+      problems.push(`${id}: checkTargets.${label} содержит небезопасный путь ${String(target)}`);
+    }
+    if (!checks.has(label)) {
+      problems.push(`${id}: checkTargets.${label} задан без check ${label}`);
+    }
+  }
+  if (checks.has("browser") && session.checkTargets.browser === undefined) {
+    problems.push(`${id}: check browser требует checkTargets.browser`);
+  }
 }
 
 function validateProfiles(

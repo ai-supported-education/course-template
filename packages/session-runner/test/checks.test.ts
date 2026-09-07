@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { runSessionChecks } from "../src/checks.js";
+import { buildCheckCommand, runSessionChecks } from "../src/checks.js";
 import type { CourseModule, FlatSession } from "../src/types.js";
 import { getSessionDirectory } from "../src/workspace.js";
 
@@ -55,6 +55,84 @@ describe("check registry", () => {
     const passing = await runSessionChecks(root, session, supportLoader);
     expect(passing.passed).toBe(true);
     expect(passing.results[0]?.status).toBe("passed");
+  });
+
+  it("keeps legacy TypeScript and Vitest targets when checkTargets is absent", () => {
+    const typecheck = buildCheckCommand("/workspace", session, "typecheck");
+    const unit = buildCheckCommand("/workspace", session, "unit");
+
+    expect(typecheck).not.toBeTypeOf("string");
+    expect(unit).not.toBeTypeOf("string");
+    if (typeof typecheck === "string" || typeof unit === "string") {
+      throw new Error("expected runnable commands");
+    }
+    expect(typecheck.args).toEqual([
+      "exec",
+      "tsc",
+      "-p",
+      path.join("sessions", "01-01", "tsconfig.json"),
+      "--noEmit"
+    ]);
+    expect(unit.args).toEqual([
+      "exec",
+      "vitest",
+      "run",
+      path.join("sessions", "01-01", "exercise.test.tsx")
+    ]);
+  });
+
+  it("builds fixed runner commands for custom JavaScript and browser targets", () => {
+    const configured: FlatSession = {
+      ...session,
+      definition: {
+        ...session.definition,
+        checks: ["unit", "browser"],
+        checkTargets: {
+          unit: "tests/property-lookup.test.js",
+          browser: "tests/event-loop.spec.ts"
+        }
+      }
+    };
+
+    const unit = buildCheckCommand("/workspace", configured, "unit");
+    const browser = buildCheckCommand("/workspace", configured, "browser");
+
+    expect(unit).toMatchObject({
+      command: "pnpm",
+      args: [
+        "exec",
+        "vitest",
+        "run",
+        path.join("sessions", "01-01", "tests/property-lookup.test.js")
+      ]
+    });
+    expect(browser).toMatchObject({
+      command: "pnpm",
+      args: [
+        "exec",
+        "playwright",
+        "test",
+        path.join("sessions", "01-01", "tests/event-loop.spec.ts")
+      ]
+    });
+  });
+
+  it("does not turn an unsafe target into a process argument", () => {
+    const configured: FlatSession = {
+      ...session,
+      definition: {
+        ...session.definition,
+        checks: ["unit"],
+        checkTargets: { unit: "../../outside.test.ts" }
+      }
+    };
+
+    expect(buildCheckCommand("/workspace", configured, "unit")).toContain(
+      "небезопасный target"
+    );
+    expect(buildCheckCommand("/workspace", session, "browser")).toContain(
+      "требует явный checkTargets.browser"
+    );
   });
 });
 

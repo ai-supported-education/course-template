@@ -1,9 +1,16 @@
 {
   "version": 1,
+  "reviewProtocol": "roadmap-subject-novice-consistency-v1",
   "language": "ru",
   "audience": "{{ опишите входные знания учащегося }}",
   "profiles": [],
   "courseContextFiles": [],
+  "toolchainFiles": [
+    "package.json",
+    "pnpm-lock.yaml",
+    "pnpm-workspace.yaml",
+    "packages/session-runner/tsconfig.json"
+  ],
   "assumedConcepts": [],
   "estimatedHours": {
     "min": 1,

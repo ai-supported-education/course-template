@@ -55,21 +55,33 @@ GitHub переносит из template только default branch, поэто�
 
 Полная схема файлов — в [repository-layout.md](docs/repository-layout.md).
 
-## Independent content-review
+## Independent author review
 
-После создания или существенного изменения карточки соберите author packet:
+До написания карточек проверьте весь roadmap двумя fresh subagents без истории
+генерации:
+
+    pnpm author:roadmap-review
+
+Curriculum-reviewer проверяет маршрут, prerequisites, размер карточек и связь с
+capstone. Независимый subject-reviewer сверяет охват и современность по
+`curriculum/source-ledger.json`, отделяя стандарт языка от host/runtime/toolchain.
+
+Для code exercise команда `pnpm author:proof <session-id>` в изолированных копиях
+доказывает одной и той же проверкой три состояния: starter падает по целевой
+причине, минимальный patch из `course-support` проходит, типичный counterexample
+не проходит. После этого каждая session и готовый published-prefix module получают
+три независимых review:
 
     pnpm author:content-review session 01-01
     pnpm author:content-review module 01
 
-Родительский Codex запускает двух независимых subagents без истории генерации.
-Novice-reviewer сначала фиксирует first-contact checkpoint по prefixes README до
-скрытых opening markers, затем в том же диалоге читает полный learner-facing
-packet и проверяет весь путь до DONE. Consistency-reviewer отдельно восстанавливает
-полный материал по blind packet и только затем сверяет его с profiles, rubric,
-checks/evidence и соседними карточками. CLI сам агентов не запускает; checkpoints
-и полные reports хранятся локально в `.authoring/`, а команда `attest` публикует
-schema v2 hash-свидетельство двух PASS. Подробнее — в
+Subject-agent проверяет факты и источники, novice-agent — сначала sealed opening,
+затем весь learner-facing путь, consistency-agent — связь с manifest, rubric,
+checks и соседними карточками. CLI не запускает агентов: родительский Codex
+запускает их с `fork_turns=none`, а отчёты записываются отдельными командами.
+Финальный `pnpm author:publication-check` принимает только актуальные roadmap,
+session/module schema v3 attestations и author proofs. Legacy protocol v8 остаётся
+поддержан для существующих курсов. Подробнее — в
 [content-review protocol](curriculum/content-review-protocol.md).
 
 ## Стековые правила

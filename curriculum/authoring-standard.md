@@ -86,8 +86,17 @@
 `releaseStatus: "planned"`. Для них обязателен только лёгкий roadmap-контракт;
 learner-facing DONE, checks и evidence появляются при публикации. Published
 карточки всегда образуют непрерывный префикс маршрута. Межсессионные документы,
-которые обязан видеть fresh reviewer, перечисляются в `courseContextFiles` и входят
-в content hash.
+которые обязан видеть fresh reviewer, перечисляются в `courseContextFiles`. Файлы
+среды исполнения и проверки отдельно перечисляются в `toolchainFiles`. Оба набора
+входят в соответствующие hashes, но изменение toolchain не инвалидирует
+независимый curriculum-review всего roadmap.
+
+До реализации карточек полный roadmap проходит два независимых review. Fresh
+curriculum-agent проверяет progression, prerequisites, размер 30–60 минут и путь к
+capstone. Fresh subject-agent сверяет охват и современность с первичными
+источниками из `curriculum/source-ledger.json`. Source ledger фиксирует URL, тип
+источника, дату проверки и concept ids, которые он поддерживает; он не заменяет
+объяснение в learner README.
 
 ## Evidence contract
 
@@ -142,10 +151,15 @@ learner-facing DONE, checks и evidence появляются при публик
 - архитектурные ограничения, которые нельзя устойчиво проверить автоматически,
   остаются в rubric и agent review.
 
-Базовый runner реализует `quiz`, `review` и TypeScript/Vitest-варианты
-`typecheck`, `unit`, `integration`. Для другого языка замените реализацию registry
-и докажите её на starter и минимальном решении; одного нового label в manifest
-недостаточно.
+Базовый runner реализует `quiz`, `review`, `typecheck`, `unit`, `integration` и
+`browser`. `checkTargets` задаёт безопасный относительный путь к config или test;
+произвольная shell-команда в manifest запрещена. Legacy defaults
+`tsconfig.json`/`exercise.test.tsx` сохранены, browser target всегда задаётся явно.
+
+Для code exercise v3-процесс требует `authorProof`: один выбранный automated check,
+ожидаемый фрагмент ошибки starter, solution patch и минимум один counterexample
+patch из `course-support`. `pnpm author:proof` запускает каждую версию в отдельной
+копии и публикует только hashes evidence, не reference answer.
 
 ## Лабораторная и внешняя практика
 
@@ -198,8 +212,10 @@ Rubric разделяет:
 проверяет смысл, rubric, корректность inference, достаточность evidence и отсутствие
 обхода цели. Сессия с `review` не завершается без актуального записанного `PASS`.
 
-Каждая новая или существенно изменённая карточка затем проходит две независимые
+Каждая новая или существенно изменённая карточка затем проходит три независимые
 author-side проверки fresh subagents без истории генерации и без обмена отчётами.
+Subject-reviewer проверяет факты, source coverage, currentness и границы между
+стандартом, host, runtime и toolchain. Его отчёт не передаётся другим reviewers.
 Novice-reviewer работает в две последовательно раскрываемые фазы. Сначала он
 получает только `00-novice.md`, физически оборванный на opening markers, и
 возвращает сохранённый first-contact checkpoint. Только после `CLEAR` тот же агент
@@ -210,9 +226,10 @@ profile contracts, concept graph, rubric, checks, evidence и соседние �
 Consistency packet содержит provenance каждого prerequisite и полный learner
 README той published session, которая впервые ввела concept: одного immediate
 previous outcome недостаточно для проверки транзитивной зависимости. Для
-публикации нужны два актуальных `PASS`; любое исправление устаревает по content hash
-и требует двух новых reviewers. После двойного session PASS всех карточек нужен
-такой же двойной module PASS.
+публикации нужны три актуальных `PASS`; любое исправление устаревает по content hash
+и требует новых reviewers. После тройного session PASS всех карточек нужен такой
+же тройной module PASS. Финальный `author:publication-check` также требует
+актуальную roadmap attestation и author proofs.
 
 Novice packet последующей карточки перечисляет learner-visible outcomes и DONE
 всех уже пройденных published-сессий. При module review packet воспроизводит

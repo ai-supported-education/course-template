@@ -25,7 +25,7 @@ async function main(): Promise<void> {
       [
         `Content review: ${scope} ${id}.`,
         `Current hash: ${status.contentHash}.`,
-        ...(["novice", "consistency"] as const).map((stage) => {
+        ...status.stages.map((stage) => {
           const review = status.reviews[stage];
           return review.record
             ? `${stage}: ${review.record.verdict} at ${review.record.reviewedAt}; ${review.current ? "CURRENT" : "STALE"}.`
@@ -49,7 +49,7 @@ async function main(): Promise<void> {
     const reportPath = reportIndex >= 0 ? args[reportIndex + 1] : undefined;
     if (!reportPath) {
       throw new Error(
-        "Использование: pnpm author:content-review --record <novice|consistency> <session|module> <id> PASS|NEEDS_REWRITE --report <path>"
+        "Использование: pnpm author:content-review --record <subject|novice|consistency> <session|module> <id> PASS|NEEDS_REWRITE --report <path>"
       );
     }
     const record = await recordContentReview(

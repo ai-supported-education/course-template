@@ -25,10 +25,29 @@ export const CHECK_LABELS = [
   "review",
   "typecheck",
   "unit",
-  "integration"
+  "integration",
+  "browser"
 ] as const;
 
 export type CheckLabel = (typeof CHECK_LABELS)[number];
+
+export const TARGETABLE_CHECK_LABELS = [
+  "typecheck",
+  "unit",
+  "integration",
+  "browser"
+] as const;
+
+export type TargetableCheckLabel = (typeof TARGETABLE_CHECK_LABELS)[number];
+
+export type CheckTargets = Partial<Record<TargetableCheckLabel, string>>;
+
+export interface AuthorProofDefinition {
+  check: TargetableCheckLabel;
+  expectedStarterFailure: string;
+  solutionPatch: string;
+  counterexamplePatches: string[];
+}
 
 export const VERIFICATION_MODES = [
   "automated",
@@ -73,6 +92,8 @@ export interface SessionDefinition extends SessionRoadmapFields {
   releaseStatus?: "published";
   done: string;
   checks: CheckLabel[];
+  checkTargets?: CheckTargets;
+  authorProof?: AuthorProofDefinition;
   evidence: EvidenceContract;
   contentReview?: ContentReviewFileSelection;
 }
@@ -101,7 +122,11 @@ export interface CourseManifest {
   language: string;
   audience: string;
   profiles: string[];
+  reviewProtocol?:
+    | "novice-walkthrough-consistency-v8"
+    | "roadmap-subject-novice-consistency-v1";
   courseContextFiles?: string[];
+  toolchainFiles?: string[];
   assumedConcepts: string[];
   estimatedHours: {
     min: number;

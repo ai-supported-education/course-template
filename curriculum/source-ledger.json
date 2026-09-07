@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "sources": [
+    {
+      "id": "replace-with-primary-source",
+      "title": "Replace this placeholder with a primary source for the real course",
+      "url": "https://example.com/replace-with-primary-source",
+      "kind": "other-primary",
+      "checkedAt": "2026-09-07",
+      "supports": [
+        "first-real-session"
+      ]
+    }
+  ]
+}

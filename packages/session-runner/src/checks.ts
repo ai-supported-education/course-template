@@ -3,7 +3,13 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { hashDirectory } from "./content-hash.js";
 import { readSupportFile, type SupportLoader } from "./support.js";
-import type { CheckLabel, CheckResult, CheckRun, FlatSession } from "./types.js";
+import type {
+  CheckLabel,
+  CheckResult,
+  CheckRun,
+  FlatSession,
+  TargetableCheckLabel
+} from "./types.js";
 import { getModuleDirectory, getSessionDirectory } from "./workspace.js";
 
 interface QuizQuestion {
@@ -68,29 +74,17 @@ async function runCheck(
     return runQuiz(root, session, supportLoader);
   }
 
-  const moduleDirectory = getModuleDirectory(root, session);
-  const relativeSessionDirectory = path.relative(
-    moduleDirectory,
-    getSessionDirectory(root, session)
-  );
-
-  if (label === "typecheck") {
-    return runCommand(label, "pnpm", [
-      "exec",
-      "tsc",
-      "-p",
-      path.join(relativeSessionDirectory, "tsconfig.json"),
-      "--noEmit"
-    ], moduleDirectory);
-  }
-
-  if (label === "unit" || label === "integration") {
-    return runCommand(label, "pnpm", [
-      "exec",
-      "vitest",
-      "run",
-      path.join(relativeSessionDirectory, "exercise.test.tsx")
-    ], moduleDirectory);
+  if (isTargetableCheckLabel(label)) {
+    const command = buildCheckCommand(root, session, label);
+    if (typeof command === "string") {
+      return {
+        label,
+        status: "failed",
+        exitCode: null,
+        output: command
+      };
+    }
+    return runCommand(label, command.command, command.args, command.cwd);
   }
 
   return {
@@ -99,6 +93,85 @@ async function runCheck(
     exitCode: null,
     output: `Check ${label} ещё не подключён в registry.`
   };
+}
+
+export interface AutomatedCheckCommand {
+  command: "pnpm";
+  args: string[];
+  cwd: string;
+}
+
+export function buildCheckCommand(
+  root: string,
+  session: FlatSession,
+  label: TargetableCheckLabel
+): AutomatedCheckCommand | string {
+  const target =
+    session.definition.checkTargets?.[label] ?? defaultCheckTarget(label);
+  if (!target) {
+    return `Check ${label} требует явный checkTargets.${label}.`;
+  }
+  if (!isPortableRelativePath(target)) {
+    return `Check ${label} содержит небезопасный target ${target}.`;
+  }
+
+  const moduleDirectory = getModuleDirectory(root, session);
+  const relativeSessionDirectory = path.relative(
+    moduleDirectory,
+    getSessionDirectory(root, session)
+  );
+  const relativeTarget = path.join(relativeSessionDirectory, target);
+
+  if (label === "typecheck") {
+    return {
+      command: "pnpm",
+      args: ["exec", "tsc", "-p", relativeTarget, "--noEmit"],
+      cwd: moduleDirectory
+    };
+  }
+
+  if (label === "browser") {
+    return {
+      command: "pnpm",
+      args: ["exec", "playwright", "test", relativeTarget],
+      cwd: moduleDirectory
+    };
+  }
+
+  return {
+    command: "pnpm",
+    args: ["exec", "vitest", "run", relativeTarget],
+    cwd: moduleDirectory
+  };
+}
+
+function defaultCheckTarget(label: TargetableCheckLabel): string | null {
+  if (label === "typecheck") {
+    return "tsconfig.json";
+  }
+  if (label === "unit" || label === "integration") {
+    return "exercise.test.tsx";
+  }
+  return null;
+}
+
+function isTargetableCheckLabel(
+  label: CheckLabel
+): label is TargetableCheckLabel {
+  return ["typecheck", "unit", "integration", "browser"].includes(label);
+}
+
+function isPortableRelativePath(value: string): boolean {
+  const segments = value.split("/");
+  return (
+    value.length > 0 &&
+    !value.startsWith("/") &&
+    !value.includes("\\") &&
+    !value.includes("\0") &&
+    segments.every(
+      (segment) => segment.length > 0 && segment !== "." && segment !== ".."
+    )
+  );
 }
 
 async function runQuiz(

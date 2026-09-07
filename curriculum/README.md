@@ -12,3 +12,10 @@ profiles, checks и evidence. Здесь можно держать челове�
 [стандартом материала](authoring-standard.md), выберите profiles по
 [`docs/course-profiles`](../docs/course-profiles/README.md) и скопируйте ближайший
 каркас из [`templates/sessions`](../templates/README.md).
+
+Для нового курса включите
+`reviewProtocol: "roadmap-subject-novice-consistency-v1"`, перечислите влияющие на
+проверки файлы в `toolchainFiles` и замените placeholder в `source-ledger.json`
+первичными источниками. До learner-facing генерации получите два независимых
+roadmap PASS через `pnpm author:roadmap-review`; перед публикацией используйте
+`pnpm author:publication-check`.

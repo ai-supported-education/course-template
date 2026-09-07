@@ -18,20 +18,30 @@ Runner читает `curriculum/course.json`, разрешает одну акт
 
 Author-side команды не используют learner progress:
 
-- `author:content-review session <id>` — собрать novice, blind и consistency
-  packets;
+- `author:roadmap-review` — собрать независимые curriculum и subject packets для
+  полного roadmap;
+- `author:roadmap-review --record ...`, `status`, `attest` — записать два verdict
+  и schema v3 roadmap attestation;
+- `author:proof [<id>...]` — воспроизвести red/green/counterexample proof code
+  exercises в изолированных копиях;
+- `author:content-review session <id>` — собрать subject, novice, blind и
+  consistency packets;
 - `author:content-review module <id>` — собрать module packet;
 - `author:content-review --record novice <scope> <id> PASS|NEEDS_REWRITE --report <path>` — записать verdict novice-review с content hash;
+- `author:content-review --record subject <scope> <id> PASS|NEEDS_REWRITE --report <path>` — записать независимый предметный verdict;
 - `author:content-review --record consistency <scope> <id> PASS|NEEDS_REWRITE --report <path>` — записать независимый consistency verdict;
-- `author:content-review status <scope> <id>` — проверить актуальность двух PASS.
+- `author:content-review status <scope> <id>` — проверить актуальность всех PASS.
 - `author:content-review attest <scope> <id>` — опубликовать компактную аттестацию
-  schema v2 с двумя актуальными PASS в `curriculum/reviews/`.
+  schema v3 с тремя актуальными PASS в `curriculum/reviews/`;
+- `author:publication-check` — финальный gate актуальности roadmap, session/module
+  attestations, support patches и author proofs.
 
-CLI не запускает агентов. Родительский Codex создаёт двух fresh subagents по
+CLI не запускает агентов. Родительский Codex создаёт fresh subagents по
 правилам `AGENTS.md`. Novice сначала получает только `00-novice.md`; после
 физически сохранённого first-contact checkpoint тот же агент отдельным follow-up
 получает `01-blind.md` и проверяет весь learner-facing материал. Независимый
-consistency-agent не видит novice checkpoint/report: он читает `01-blind.md`,
+subject-agent отдельно сверяет утверждения и currentness с source ledger.
+Consistency-agent не видит чужие checkpoint/report: он читает `01-blind.md`,
 фиксирует reconstruction и только затем получает `02-consistency.md`. Локальные
 packets и records находятся в игнорируемой `.authoring/`.
 
@@ -40,7 +50,9 @@ packets и records находятся в игнорируемой `.authoring/`.
 prefix до marker. Для начала курса полный корневой README входит также в
 `01-blind.md` и `02-consistency.md`; later targets его не повторяют, но получают
 краткие outcomes и DONE всех уже пройденных published-карточек. Protocol id
-— `novice-walkthrough-consistency-v8`. `02-consistency.md` также содержит
+— `roadmap-subject-novice-consistency-v1`. Legacy
+`novice-walkthrough-consistency-v8` и schema v2 остаются читаемыми для существующих
+курсов. `02-consistency.md` также содержит
 provenance всех prerequisites и полные learner README более ранних source sessions;
 изменение такого source входит в hash зависимого review. `01-blind.md` содержит
 полный learner-facing маршрут и используется обеими ролями независимо: novice —
@@ -53,9 +65,11 @@ Check label появляется только после трёх доказат
 `packages/session-runner/src`, падает на starter по ожидаемой причине и проходит
 после минимального решения. Manifest не хранит произвольные shell-команды.
 
-Базовый runner поддерживает `quiz`, `review` и TypeScript/Vitest-реализации
-`typecheck`, `unit`, `integration`. Последние три являются reference adapter для
-software profile, а не универсальными командами Java, hardware или lab-курсов.
+Базовый runner поддерживает `quiz`, `review`, `typecheck`, `unit`, `integration`
+и `browser`. Для четырёх исполняемых checks `checkTargets` выбирает безопасный
+относительный config/test path; произвольные shell-команды запрещены. Они являются
+reference adapters для software profile, а не универсальными командами Java,
+hardware или lab-курсов.
 Остальные labels и другие adapters добавляются вместе с конкретным курсом и тестом
 самого check.
 
@@ -67,3 +81,7 @@ software profile, а не универсальными командами Java, 
 - `contentReview.learner|consistency|exclude` при необходимости переопределяет роль
   точного относительного файла в author packets. Небезопасные пути, дублирование
   ролей и включение `answers.json` отклоняются.
+- `toolchainFiles` перечисляет lockfile и configs, изменение которых устаревает
+  техническое доказательство и content-review, но не curriculum hash roadmap.
+- `authorProof` связывает выбранный automated check с solution/counterexample
+  patches в `course-support` и ожидаемой причиной падения starter.

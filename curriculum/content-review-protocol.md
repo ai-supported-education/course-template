@@ -1,15 +1,21 @@
 # Независимый content-review учебного материала
 
-Protocol id: `novice-walkthrough-consistency-v8`.
+Protocol id: `roadmap-subject-novice-consistency-v1`.
 
-## Зачем нужны два reviewer
+Existing repositories may keep `novice-walkthrough-consistency-v8` and schema v2:
+runner still reads that contract. New courses use v3; a legacy attestation does not
+satisfy a v3 publication gate.
+
+## Зачем нужны три reviewer
 
 Автор знает, что хотел сказать, и автоматически достраивает пропущенные связи.
 Предметный эксперт-reviewer делает то же самое: узнаёт API по имени, вспоминает
 принятый паттерн и не замечает, что в самом тексте опоры нет.
 
-Поэтому публикацию независимо проверяют два fresh subagent:
+Поэтому публикацию независимо проверяют три fresh subagent:
 
+- **subject-reviewer** сверяет факты, currentness и runtime boundaries с
+  первичными источниками из source ledger;
 - **novice-reviewer** сначала фиксирует первый контакт без поздних подсказок, а
   затем проходит весь learner-facing материал до DONE;
 - **consistency-reviewer** независимо восстанавливает весь материал, а затем
@@ -17,6 +23,11 @@ Protocol id: `novice-walkthrough-consistency-v8`.
 
 Они не получают историю генерации и отчёты друг друга. Это author-side проверка
 материала, а не review решения учащегося.
+
+До генерации карточек отдельная пара fresh reviewers проверяет полный roadmap:
+curriculum-agent — progression, prerequisites, размер карточек и capstone;
+subject-agent — охват, корректность и современность. Команда
+`pnpm author:roadmap-review` физически создаёт разные packets и hashes.
 
 ## Opening marker
 
@@ -53,8 +64,8 @@ Planned-сессия остаётся roadmap и не имеет reviewable lear
 review автор переводит готовую карточку в `published` внутри feature branch.
 Расширение published prefix меняет module hash и требует нового module review.
 
-Команда создаёт игнорируемую папку `.authoring/content-review/packets/...` с тремя
-фазами:
+Команда создаёт игнорируемую папку `.authoring/content-review/packets/...` с
+раздельными фазами:
 
 - `00-novice.md` — первая фаза novice-review: заявленная стартовая точка
   аудитории, learner-visible `outcome`/`done` всех предыдущих published-карточек
@@ -72,7 +83,9 @@ review автор переводит готовую карточку в `publish
 - `02-consistency.md` — manifest/concept graph, rubric, checks/evidence, profile
   contracts, acceptance evidence, соседние карточки и provenance каждого
   prerequisite; для начала курса корневой README повторяется как course-level
-  evidence.
+  evidence;
+- `03-subject.md` — learner и author contracts, source ledger и перечисленные
+  `toolchainFiles`. Его получает только subject-reviewer.
 
 Prerequisite provenance не приравнивает «известно до текущей карточки» к
 «обязательно введено в immediate previous card». Для каждого `requires` packet
@@ -123,6 +136,11 @@ answers, solutions, secrets и traversal paths отклоняются validator-
 встраиваются в packet. Остальные и слишком большие файлы перечисляются с размером
 и SHA-256. Существенный binary artifact получает текстовый companion с
 происхождением, форматом и способом интерпретации.
+
+Изменение `toolchainFiles` или source ledger инвалидирует subject/content review,
+но не структурный curriculum hash roadmap. Изменение progression инвалидирует
+roadmap curriculum review. Так правка одного config или source metadata не
+заставляет повторять несвязанный тип review.
 
 ## Novice-review: две фазы одного fresh-агента
 
@@ -179,6 +197,24 @@ H1 и отдельной строки `Verdict: PASS|NEEDS_REWRITE`, после 
 - `Findings`;
 - `Verdict rationale`.
 
+## Subject-review
+
+Третий независимый subagent запускается с `fork_turns="none"` и получает только
+subject packet. Он не видит novice/consistency reports и не исправляет материал.
+Reviewer сверяет существенные утверждения с `curriculum/source-ledger.json`, при
+необходимости открывает указанные первичные источники и проверяет:
+
+1. Поддерживает ли источник конкретное утверждение, а не просто близкую тему.
+2. Не смешаны ли ECMAScript/язык, host API, runtime, engine и toolchain.
+3. Не выдана ли изменчивая совместимость или версия за вечный факт; указана ли
+   дата проверки.
+4. Нет ли обещаний о недетерминированном поведении, например точном времени GC.
+5. Совпадают ли факты, примеры, quiz, rubric и acceptance contract.
+
+Subject report начинается с H1 и `Verdict: PASS|NEEDS_REWRITE`, затем содержит
+`Coverage map`, `Accuracy and currentness`, `Runtime boundaries`,
+`Source ledger audit`, `Findings`, `Verdict rationale`.
+
 ## Consistency-review
 
 Второй независимый subagent также запускается с `fork_turns="none"`. Он не получает
@@ -209,7 +245,7 @@ Consistency report начинается с H1 и отдельной строки
 - `Findings`;
 - `Verdict rationale`.
 
-Оба reviewer работают read-only и не пишут автору готовое вступление. Finding
+Все reviewers работают read-only и не пишут автору готовое вступление. Finding
 называет точный фрагмент, эффект для заявленного учащегося и тип необходимого
 исправления. Качество языка не сводится к подсчёту слов, англицизмов, заголовков или
 показателю читаемости.
@@ -231,37 +267,38 @@ sealed first-contact: первый контакт уже состоялся бе
 learner walkthrough. Для consistency действует та же граница verdict; иначе
 результат — `NEEDS_REWRITE`.
 
-После любого исправления родительский агент запускает **двух новых** fresh
+После любого исправления родительский агент запускает **трёх новых** fresh
 reviewers. Нельзя продолжать прежний novice checkpoint или consistency
 reconstruction: они относятся к старой версии. Передача finding одного агента
 другому не считается независимой проверкой.
 
-## Запись результата и attestation schema v2
+## Запись результата и attestation schema v3
 
-Сохраните два отчёта в локальные Markdown-файлы и запишите фактические verdict:
+Сохраните три отчёта в локальные Markdown-файлы и запишите фактические verdict:
 
+    pnpm author:content-review --record subject session 01-01 PASS --report <path>
     pnpm author:content-review --record novice session 01-01 PASS --report <path>
     pnpm author:content-review --record consistency session 01-01 PASS --report <path>
     pnpm author:content-review status session 01-01
 
-Каждый record связан с общим content hash текущей карточки и соседнего контекста.
+Каждый record связан с content hash текущей карточки и соседнего контекста.
 Изменение opening, полного learner material, language contract, roadmap,
-courseContextFiles или активных profile documents делает обе записи
-`STALE_OR_MISSING`. `status` отдельно показывает novice и consistency stages и
-считает общий status зелёным только при двух актуальных PASS.
+courseContextFiles, toolchainFiles, source ledger или активных profile documents
+делает записи `STALE_OR_MISSING`. `status` отдельно показывает subject, novice и
+consistency stages и считает общий status зелёным только при трёх актуальных PASS.
 
-После двух PASS создайте публичную запись:
+После трёх PASS создайте публичную запись:
 
     pnpm author:content-review attest session 01-01
 
-Публичный JSON использует `schemaVersion: 2` и
-`protocol: "novice-walkthrough-consistency-v8"`. В объекте `reviews` находятся
-отдельные `novice` и `consistency`; для каждой проверки публикуются verdict, время
-review и SHA-256 соответствующего локального отчёта. Общий content hash остаётся
-на уровне attestation. Raw reports и packets остаются в `.authoring/`.
+Публичный JSON использует `schemaVersion: 3` и
+`protocol: "roadmap-subject-novice-consistency-v1"`. В объекте `reviews` находятся
+отдельные `subject`, `novice` и `consistency`; для каждой проверки публикуются
+verdict, время review и SHA-256 соответствующего локального отчёта. Общий content
+hash остаётся на уровне attestation. Raw reports и packets остаются в `.authoring/`.
 
-Attestation v1 и protocol до v8 не удовлетворяют v8 и автоматически считаются
-устаревшими; старый одиночный PASS или novice PASS только по opening не мигрируется
-в новый stage. После двойного PASS всех опубликованных карточек module проходит
-такую же пару review и получает schema v2 attestation. Только актуальные двойные
-session и module PASS считаются готовыми к публикации.
+Legacy schema v2 остаётся валидной только для legacy protocol. Она не мигрируется
+автоматически в v3. После тройного PASS всех опубликованных карточек module
+проходит такие же три review и получает schema v3 attestation. Только актуальные
+roadmap, тройные session/module attestations и author proofs проходят
+`pnpm author:publication-check`.

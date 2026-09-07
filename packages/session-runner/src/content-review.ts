@@ -18,7 +18,13 @@ import {
   loadManifest
 } from "./manifest.js";
 import { loadCourseProfileDocuments } from "./profiles.js";
+import {
+  loadSourceLedger,
+  SOURCE_LEDGER_PATH,
+  type SourceLedger
+} from "./source-ledger.js";
 import { readSupportFile } from "./support.js";
+import { loadToolchainDocuments } from "./toolchain.js";
 import type {
   CourseManifest,
   FlatRoadmapSession,
@@ -28,21 +34,34 @@ import { getModuleDirectory, getSessionDirectory } from "./workspace.js";
 
 export const CONTENT_REVIEW_VERDICTS = ["PASS", "NEEDS_REWRITE"] as const;
 export const CONTENT_REVIEW_STAGES = ["novice", "consistency"] as const;
+export const CONTENT_REVIEW_STAGES_V3 = [
+  "subject",
+  "novice",
+  "consistency"
+] as const;
 export const CONTENT_REVIEW_PROTOCOL =
   "novice-walkthrough-consistency-v8" as const;
+export const CONTENT_REVIEW_PROTOCOL_V3 =
+  "roadmap-subject-novice-consistency-v1" as const;
 export const CONTENT_REVIEW_OPENING_MARKER =
   "<!-- content-review:opening:end -->" as const;
 export const LEARNER_FACING_LANGUAGE_PATH =
   "docs/learner-facing-language.md" as const;
 export type ContentReviewVerdict = (typeof CONTENT_REVIEW_VERDICTS)[number];
-export type ContentReviewStage = (typeof CONTENT_REVIEW_STAGES)[number];
+export type ContentReviewStage = (typeof CONTENT_REVIEW_STAGES_V3)[number];
+export type ContentReviewProtocol =
+  | typeof CONTENT_REVIEW_PROTOCOL
+  | typeof CONTENT_REVIEW_PROTOCOL_V3;
 export type ContentReviewScope = "session" | "module";
 
 export interface PreparedContentReview {
   scope: ContentReviewScope;
   id: string;
   contentHash: string;
+  protocol: ContentReviewProtocol;
+  stages: readonly ContentReviewStage[];
   packetDirectory: string;
+  subjectPacketPath: string | null;
   novicePacketPath: string;
   blindPacketPath: string;
   consistencyPacketPath: string;
@@ -62,6 +81,8 @@ export interface ContentReviewStatus {
   scope: ContentReviewScope;
   id: string;
   contentHash: string;
+  protocol: ContentReviewProtocol;
+  stages: readonly ContentReviewStage[];
   reviews: Record<
     ContentReviewStage,
     { record: ContentReviewRecord | null; current: boolean }
@@ -69,7 +90,13 @@ export interface ContentReviewStatus {
   current: boolean;
 }
 
-export interface ContentReviewAttestation {
+interface PublicContentReview {
+  verdict: "PASS";
+  reviewedAt: string;
+  reportSha256: string;
+}
+
+export interface ContentReviewAttestationV2 {
   schemaVersion: 2;
   scope: ContentReviewScope;
   id: string;
@@ -77,11 +104,26 @@ export interface ContentReviewAttestation {
   verdict: "PASS";
   attestedAt: string;
   reviews: Record<
-    ContentReviewStage,
-    { verdict: "PASS"; reviewedAt: string; reportSha256: string }
+    (typeof CONTENT_REVIEW_STAGES)[number],
+    PublicContentReview
   >;
   protocol: typeof CONTENT_REVIEW_PROTOCOL;
 }
+
+export interface ContentReviewAttestationV3 {
+  schemaVersion: 3;
+  scope: ContentReviewScope;
+  id: string;
+  contentHash: string;
+  verdict: "PASS";
+  attestedAt: string;
+  reviews: Record<ContentReviewStage, PublicContentReview>;
+  protocol: typeof CONTENT_REVIEW_PROTOCOL_V3;
+}
+
+export type ContentReviewAttestation =
+  | ContentReviewAttestationV2
+  | ContentReviewAttestationV3;
 
 export interface WrittenContentReviewAttestation {
   path: string;
@@ -113,6 +155,7 @@ type ReviewFileRole = "learner" | "consistency";
 type ReviewPacketSelection =
   | "context"
   | "blind"
+  | "author"
   | "consistency";
 
 interface ReviewFile {
@@ -196,6 +239,8 @@ export async function prepareContentReview(
   id: string
 ): Promise<PreparedContentReview> {
   const target = await resolveTarget(root, scope, id);
+  const protocol = contentReviewProtocol(target.manifest);
+  const stages = contentReviewStages(protocol);
   const contentHash = await hashReviewTarget(root, target);
   const packetDirectory = path.join(
     getAuthoringDirectory(root),
@@ -203,6 +248,10 @@ export async function prepareContentReview(
     "packets",
     `${scope}-${id}-${contentHash.slice(0, 12)}`
   );
+  const subjectPacketPath =
+    protocol === CONTENT_REVIEW_PROTOCOL_V3
+      ? path.join(packetDirectory, "03-subject.md")
+      : null;
   const novicePacketPath = path.join(packetDirectory, "00-novice.md");
   const blindPacketPath = path.join(packetDirectory, "01-blind.md");
   const consistencyPacketPath = path.join(packetDirectory, "02-consistency.md");
@@ -223,12 +272,22 @@ export async function prepareContentReview(
     await buildConsistencyPacket(root, target, contentHash),
     "utf8"
   );
+  if (subjectPacketPath) {
+    await writeFile(
+      subjectPacketPath,
+      await buildSubjectPacket(root, target, contentHash),
+      "utf8"
+    );
+  }
 
   return {
     scope,
     id,
     contentHash,
+    protocol,
+    stages,
     packetDirectory,
+    subjectPacketPath,
     novicePacketPath,
     blindPacketPath,
     consistencyPacketPath
@@ -244,6 +303,11 @@ export async function recordContentReview(
   sourceReportPath: string
 ): Promise<ContentReviewRecord> {
   const prepared = await prepareContentReview(root, scope, id);
+  if (!prepared.stages.includes(stage)) {
+    throw new Error(
+      `Stage ${stage} недоступен для protocol ${prepared.protocol}.`
+    );
+  }
   const report = await readFile(path.resolve(sourceReportPath), "utf8");
   validateReport(stage, report, verdict);
 
@@ -284,12 +348,19 @@ export async function getContentReviewStatus(
   id: string
 ): Promise<ContentReviewStatus> {
   const target = await resolveTarget(root, scope, id);
+  const protocol = contentReviewProtocol(target.manifest);
+  const stages = contentReviewStages(protocol);
   const contentHash = await hashReviewTarget(root, target);
   const state = await loadContentReviewState(root);
   const records = state.records[reviewKey(scope, id)] ?? {};
+  const subjectRecord = records.subject ?? null;
   const noviceRecord = records.novice ?? null;
   const consistencyRecord = records.consistency ?? null;
   const reviews = {
+    subject: {
+      record: subjectRecord,
+      current: subjectRecord?.contentHash === contentHash
+    },
     novice: {
       record: noviceRecord,
       current: noviceRecord?.contentHash === contentHash
@@ -303,8 +374,10 @@ export async function getContentReviewStatus(
     scope,
     id,
     contentHash,
+    protocol,
+    stages,
     reviews,
-    current: CONTENT_REVIEW_STAGES.every(
+    current: stages.every(
       (stage) =>
         reviews[stage].current && reviews[stage].record?.verdict === "PASS"
     )
@@ -318,47 +391,65 @@ export async function writeContentReviewAttestation(
 ): Promise<WrittenContentReviewAttestation> {
   const status = await getContentReviewStatus(root, scope, id);
   if (!status.current) {
-    throw new Error(
-      `Для ${scope} ${id} нужны два актуальных content-review PASS: novice и consistency.`
-    );
+    throw new Error(requiredPassMessage(status.protocol, scope, id));
   }
 
+  const subjectRecord = status.reviews.subject.record;
   const noviceRecord = status.reviews.novice.record;
   const consistencyRecord = status.reviews.consistency.record;
-  if (!noviceRecord || !consistencyRecord) {
-    throw new Error(
-      `Для ${scope} ${id} нужны два актуальных content-review PASS: novice и consistency.`
-    );
+  if (
+    !noviceRecord ||
+    !consistencyRecord ||
+    (status.protocol === CONTENT_REVIEW_PROTOCOL_V3 && !subjectRecord)
+  ) {
+    throw new Error(requiredPassMessage(status.protocol, scope, id));
   }
   const noviceReport = await readFile(path.resolve(root, noviceRecord.reportPath));
   const consistencyReport = await readFile(
     path.resolve(root, consistencyRecord.reportPath)
   );
-  const value: ContentReviewAttestation = {
-    schemaVersion: 2,
-    scope,
-    id,
-    contentHash: status.contentHash,
-    verdict: "PASS",
-    attestedAt: new Date().toISOString(),
-    reviews: {
-      novice: {
-        verdict: "PASS",
-        reviewedAt: noviceRecord.reviewedAt,
-        reportSha256: createHash("sha256")
-          .update(noviceReport)
-          .digest("hex")
+  const novice = publicContentReview(noviceRecord, noviceReport);
+  const consistency = publicContentReview(
+    consistencyRecord,
+    consistencyReport
+  );
+  let value: ContentReviewAttestation;
+  if (status.protocol === CONTENT_REVIEW_PROTOCOL_V3) {
+    if (!subjectRecord) {
+      throw new Error(requiredPassMessage(status.protocol, scope, id));
+    }
+    const subjectReport = await readFile(
+      path.resolve(root, subjectRecord.reportPath)
+    );
+    value = {
+      schemaVersion: 3,
+      scope,
+      id,
+      contentHash: status.contentHash,
+      verdict: "PASS",
+      attestedAt: new Date().toISOString(),
+      reviews: {
+        subject: publicContentReview(subjectRecord, subjectReport),
+        novice,
+        consistency
       },
-      consistency: {
-        verdict: "PASS",
-        reviewedAt: consistencyRecord.reviewedAt,
-        reportSha256: createHash("sha256")
-          .update(consistencyReport)
-          .digest("hex")
-      }
-    },
-    protocol: CONTENT_REVIEW_PROTOCOL
-  };
+      protocol: CONTENT_REVIEW_PROTOCOL_V3
+    };
+  } else {
+    value = {
+      schemaVersion: 2,
+      scope,
+      id,
+      contentHash: status.contentHash,
+      verdict: "PASS",
+      attestedAt: new Date().toISOString(),
+      reviews: {
+        novice,
+        consistency
+      },
+      protocol: CONTENT_REVIEW_PROTOCOL
+    };
+  }
   const outputPath = path.join(
     root,
     "curriculum",
@@ -378,10 +469,10 @@ export function parseContentReviewScope(value: string): ContentReviewScope {
 }
 
 export function parseContentReviewStage(value: string): ContentReviewStage {
-  if (value === "novice" || value === "consistency") {
+  if (value === "subject" || value === "novice" || value === "consistency") {
     return value;
   }
-  throw new Error("Stage должен быть novice или consistency.");
+  throw new Error("Stage должен быть subject, novice или consistency.");
 }
 
 export function parseContentReviewVerdict(value: string): ContentReviewVerdict {
@@ -394,6 +485,27 @@ export function parseContentReviewVerdict(value: string): ContentReviewVerdict {
 export function formatPreparedContentReview(
   prepared: PreparedContentReview
 ): string {
+  if (prepared.protocol === CONTENT_REVIEW_PROTOCOL_V3) {
+    if (!prepared.subjectPacketPath) {
+      throw new Error("Для v3 content review отсутствует subject packet.");
+    }
+    return [
+      `Content review packet готов для ${prepared.scope} ${prepared.id}.`,
+      `Hash: ${prepared.contentHash}.`,
+      `Subject packet: ${prepared.subjectPacketPath}.`,
+      `Novice packet: ${prepared.novicePacketPath}.`,
+      `Blind learner packet: ${prepared.blindPacketPath}.`,
+      `Consistency evidence packet: ${prepared.consistencyPacketPath}.`,
+      "Запустите ТРЁХ независимых fresh subagents с fork_turns=none.",
+      "1. Subject-agent получает только 03-subject.md и независимо проверяет learner и author contracts по source ledger и toolchain documents.",
+      "2. Novice-agent сначала получает только 00-novice.md и возвращает first-contact checkpoint. Сохраните checkpoint до продолжения.",
+      "3. Если checkpoint CLEAR, тому же novice-agent отдельным follow-up передайте только 01-blind.md. Он проходит весь learner-facing материал и возвращает итоговый novice report; 02 и 03 ему не показывайте.",
+      "4. Другой consistency-agent не получает subject/novice packets или reports. Он независимо читает 01-blind.md, письменно фиксирует reconstruction, затем открывает 02-consistency.md.",
+      `Запись subject: pnpm author:content-review --record subject ${prepared.scope} ${prepared.id} PASS|NEEDS_REWRITE --report <path>.`,
+      `Запись novice: pnpm author:content-review --record novice ${prepared.scope} ${prepared.id} PASS|NEEDS_REWRITE --report <path>.`,
+      `Запись consistency: pnpm author:content-review --record consistency ${prepared.scope} ${prepared.id} PASS|NEEDS_REWRITE --report <path>.`
+    ].join("\n");
+  }
   return [
     `Content review packet готов для ${prepared.scope} ${prepared.id}.`,
     `Hash: ${prepared.contentHash}.`,
@@ -411,6 +523,20 @@ export function formatPreparedContentReview(
 
 function getAuthoringDirectory(root: string): string {
   return path.join(root, ".authoring");
+}
+
+function contentReviewProtocol(manifest: CourseManifest): ContentReviewProtocol {
+  return manifest.reviewProtocol === CONTENT_REVIEW_PROTOCOL_V3
+    ? CONTENT_REVIEW_PROTOCOL_V3
+    : CONTENT_REVIEW_PROTOCOL;
+}
+
+function contentReviewStages(
+  protocol: ContentReviewProtocol
+): readonly ContentReviewStage[] {
+  return protocol === CONTENT_REVIEW_PROTOCOL_V3
+    ? CONTENT_REVIEW_STAGES_V3
+    : CONTENT_REVIEW_STAGES;
 }
 
 function getContentReviewStatePath(root: string): string {
@@ -515,10 +641,28 @@ function findNextRoadmap(
 
 async function hashReviewTarget(root: string, target: ReviewTarget): Promise<string> {
   const hash = createHash("sha256");
-  hash.update(`protocol:${CONTENT_REVIEW_PROTOCOL}`);
+  const protocol = contentReviewProtocol(target.manifest);
+  hash.update(`protocol:${protocol}`);
   hash.update("\0");
   hash.update(JSON.stringify(reviewManifestContext(target)));
   hash.update("\0");
+
+  if (protocol === CONTENT_REVIEW_PROTOCOL_V3) {
+    const ledger = relevantSourceLedger(await loadSourceLedger(root), target);
+    hash.update(`source-ledger:${SOURCE_LEDGER_PATH}`);
+    hash.update("\0");
+    hash.update(JSON.stringify(ledger));
+    hash.update("\0");
+    for (const document of await loadToolchainDocuments(
+      root,
+      target.manifest.toolchainFiles ?? []
+    )) {
+      hash.update(`toolchain:${document.path}`);
+      hash.update("\0");
+      hash.update(document.source);
+      hash.update("\0");
+    }
+  }
 
   const languageContract = await readLearnerFacingLanguage(root);
   hash.update(languageContract.path);
@@ -1102,6 +1246,199 @@ async function buildConsistencyPacket(
   return ensureTrailingNewline(sections.join("\n"));
 }
 
+async function buildSubjectPacket(
+  root: string,
+  target: ReviewTarget,
+  contentHash: string
+): Promise<string> {
+  const ledger = relevantSourceLedger(await loadSourceLedger(root), target);
+  const toolchain = await loadToolchainDocuments(
+    root,
+    target.manifest.toolchainFiles ?? []
+  );
+  const sections = [
+    "# Subject accuracy and currentness pass",
+    "",
+    metadataBlock(target, contentHash),
+    `Protocol: ${CONTENT_REVIEW_PROTOCOL_V3}`,
+    "",
+    "## Reviewer contract",
+    "",
+    "Вы — независимый fresh subject-reviewer без истории генерации. Получите только этот packet: не открывайте repository, novice/consistency packets, reports, hints или solutions.",
+    "Проверьте предметную корректность и современность learner contract, затем сверите её с author contract, source ledger и фактическими toolchain documents. Source ledger задаёт проверяемые источники, но не заменяет проверку того, что источник действительно поддерживает конкретное утверждение.",
+    "Для каждого существенного утверждения отличайте стандарт языка от host API, поведения runtime/engine и преобразований toolchain. Не переносите наблюдение одной версии или среды на все реализации без доказательства; inference называйте inference.",
+    "Проверьте, что author contract, rubric, checks и acceptance evidence не требуют и не закрепляют предметно неверную модель. Для code exercise отдельно оцените заявленный starter failure, минимальный solution proof и counterexamples, не публикуя готовое решение учащемуся.",
+    "Finding содержит severity BLOCKER|MAJOR|MINOR, точную цитату или contract field, learner effect, source evidence и тип требуемого исправления. PASS допустим только без открытых BLOCKER и MAJOR.",
+    "Reviewer работает read-only и возвращает отчёт; material не исправляет.",
+    "",
+    "## Learner contract",
+    "",
+    await renderSubjectLearnerContract(root, target),
+    "",
+    "## Author contract",
+    "",
+    await renderSubjectAuthorContract(root, target),
+    "",
+    `## Source ledger (${SOURCE_LEDGER_PATH})`,
+    "",
+    "```json",
+    JSON.stringify(ledger, null, 2),
+    "```",
+    "",
+    "## Toolchain documents",
+    "",
+    renderToolchainDocuments(toolchain),
+    "",
+    "## Required report format",
+    "",
+    `# Subject content review: ${target.scope} ${target.id}`,
+    "",
+    "Verdict: PASS|NEEDS_REWRITE",
+    "",
+    "## Coverage map",
+    "",
+    "Карта существенных learner/author claims к первичным источникам и явно не покрытые утверждения.",
+    "",
+    "## Accuracy and currentness",
+    "",
+    "Предметная корректность, актуальность версий и границы применимости утверждений.",
+    "",
+    "## Runtime boundaries",
+    "",
+    "Разделение ECMAScript, host API, runtime/engine behavior и toolchain transformations.",
+    "",
+    "## Source ledger audit",
+    "",
+    "Достаточность, первичность, даты проверки и реальная поддержка claims источниками ledger.",
+    "",
+    "## Findings",
+    "",
+    "Каждый finding: severity BLOCKER|MAJOR|MINOR, evidence, learner effect и требуемый тип исправления. Не раскрывайте reference solution или quiz answer.",
+    "",
+    "## Verdict rationale",
+    "",
+    "PASS допустим только без открытых BLOCKER и MAJOR."
+  ];
+
+  return ensureTrailingNewline(sections.join("\n"));
+}
+
+function relevantSourceLedger(
+  ledger: SourceLedger,
+  target: ReviewTarget
+): SourceLedger {
+  const concepts = new Set(
+    target.targetSessions.flatMap((session) => [
+      ...session.definition.requires,
+      ...session.definition.introduces,
+      ...session.definition.defers
+    ])
+  );
+  return {
+    schemaVersion: 1,
+    sources: ledger.sources.filter((source) =>
+      source.supports.some((concept) => concepts.has(concept))
+    )
+  };
+}
+
+async function renderSubjectLearnerContract(
+  root: string,
+  target: ReviewTarget
+): Promise<string> {
+  return [
+    "### Course overview",
+    "",
+    await renderCourseOverview(root, target),
+    "",
+    "### Canonical course context",
+    "",
+    await renderCourseContextDocuments(root, target),
+    "",
+    "### Module overview",
+    "",
+    await renderModuleOverview(root, target),
+    "",
+    "### Previous learner material",
+    "",
+    target.previous
+      ? await renderSelectedFiles(root, [target.previous], "context")
+      : "Отсутствует.",
+    "",
+    "### Learner material under review",
+    "",
+    await renderSelectedFiles(root, target.targetSessions, "blind"),
+    "",
+    "### Next learner contract",
+    "",
+    target.next
+      ? renderLearnerVisibleSessionSummary(target.next)
+      : target.nextRoadmap
+        ? renderLearnerVisibleRoadmapSummary(target.nextRoadmap)
+        : "Это последний шаг курса."
+  ].join("\n");
+}
+
+async function renderSubjectAuthorContract(
+  root: string,
+  target: ReviewTarget
+): Promise<string> {
+  const manifestContract = {
+    protocol: CONTENT_REVIEW_PROTOCOL_V3,
+    scope: target.scope,
+    id: target.id,
+    title: target.title,
+    goal: target.goal,
+    sessions: target.targetSessions.map((session) => session.definition)
+  };
+  return [
+    "### Manifest target contract",
+    "",
+    "```json",
+    JSON.stringify(manifestContract, null, 2),
+    "```",
+    "",
+    "### Prerequisite provenance",
+    "",
+    await renderPrerequisiteProvenance(root, target),
+    "",
+    "### Active profile contracts",
+    "",
+    await renderProfileContext(root, target),
+    "",
+    "### Learner-facing language contract",
+    "",
+    (await readLearnerFacingLanguage(root)).source.trimEnd(),
+    "",
+    "### Rubric, tests and author-only acceptance material",
+    "",
+    await renderSelectedFiles(root, target.targetSessions, "author"),
+    "",
+    "### Hidden quiz acceptance evidence",
+    "",
+    await renderQuizAcceptanceEvidence(root, target.targetSessions)
+  ].join("\n");
+}
+
+function renderToolchainDocuments(
+  documents: Awaited<ReturnType<typeof loadToolchainDocuments>>
+): string {
+  if (documents.length === 0) {
+    return "Manifest не перечисляет toolchainFiles.";
+  }
+  return documents
+    .map((document) =>
+      [
+        `### Toolchain: ${document.path}`,
+        "",
+        "~~~~",
+        document.source.trimEnd(),
+        "~~~~"
+      ].join("\n")
+    )
+    .join("\n\n");
+}
+
 function metadataBlock(target: ReviewTarget, contentHash: string): string {
   return [
     `Scope: ${target.scope}`,
@@ -1455,6 +1792,9 @@ function selectedForPacket(
   if (selection === "blind") {
     return file.role === "learner";
   }
+  if (selection === "author") {
+    return file.role === "consistency";
+  }
   return true;
 }
 
@@ -1664,6 +2004,27 @@ async function saveContentReviewState(
   await rename(temporaryPath, statePath);
 }
 
+function requiredPassMessage(
+  protocol: ContentReviewProtocol,
+  scope: ContentReviewScope,
+  id: string
+): string {
+  return protocol === CONTENT_REVIEW_PROTOCOL_V3
+    ? `Для ${scope} ${id} нужны три актуальных content-review PASS: subject, novice и consistency.`
+    : `Для ${scope} ${id} нужны два актуальных content-review PASS: novice и consistency.`;
+}
+
+function publicContentReview(
+  record: ContentReviewRecord,
+  report: Uint8Array
+): PublicContentReview {
+  return {
+    verdict: "PASS",
+    reviewedAt: record.reviewedAt,
+    reportSha256: createHash("sha256").update(report).digest("hex")
+  };
+}
+
 function validateReport(
   stage: ContentReviewStage,
   report: string,
@@ -1679,8 +2040,17 @@ function validateReport(
     );
   }
   const headings =
-    stage === "novice"
+    stage === "subject"
       ? [
+          "## Coverage map",
+          "## Accuracy and currentness",
+          "## Runtime boundaries",
+          "## Source ledger audit",
+          "## Findings",
+          "## Verdict rationale"
+        ]
+      : stage === "novice"
+        ? [
           "## Opening reconstruction",
           "## Reference audit",
           "## Identifier and API audit",
@@ -1690,14 +2060,14 @@ function validateReport(
           "## Continuity",
           "## Findings",
           "## Verdict rationale"
-        ]
-      : [
+          ]
+        : [
           "## Learner reconstruction",
           "## Continuity and profiles",
           "## Evidence and safety",
           "## Findings",
           "## Verdict rationale"
-        ];
+          ];
   for (const heading of headings) {
     if (!report.split(/\r?\n/).includes(heading)) {
       throw new Error(`Report не содержит обязательный раздел ${heading}.`);

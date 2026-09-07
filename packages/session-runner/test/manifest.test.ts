@@ -240,6 +240,62 @@ describe("course manifest", () => {
     );
   });
 
+  it("requires configured check targets instead of legacy TSX defaults", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "published-targets-"));
+    const directory = path.join(root, "modules/01-sample/sessions/01-01");
+    await mkdir(path.join(directory, "tests"), { recursive: true });
+    await writeFile(path.join(directory, "README.md"), "# Published\n");
+    await writeFile(path.join(directory, "rubric.md"), "# Rubric\n");
+
+    const module = {
+      id: "01",
+      slug: "sample",
+      title: "Sample",
+      goal: "Sample",
+      sessions: []
+    };
+    const configured: FlatSession = {
+      index: 0,
+      module,
+      isCapstone: false,
+      definition: {
+        id: "01-01",
+        title: "Custom targets",
+        minutes: 30,
+        kind: "test",
+        outcome: "Outcome",
+        done: "Done",
+        checks: ["unit", "browser"],
+        checkTargets: {
+          unit: "tests/exercise.test.js",
+          browser: "tests/exercise.spec.ts"
+        },
+        evidence: {
+          produces: ["tests"],
+          verifiedBy: ["automated"]
+        },
+        requires: [],
+        introduces: ["one"],
+        defers: []
+      }
+    };
+
+    const missing = await validatePublishedMaterials(root, [configured]);
+    expect(missing).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining("tests/exercise.test.js"),
+        expect.stringContaining("tests/exercise.spec.ts")
+      ])
+    );
+    expect(missing.some((problem) => problem.includes("exercise.test.tsx"))).toBe(
+      false
+    );
+
+    await writeFile(path.join(directory, "tests/exercise.test.js"), "export {};\n");
+    await writeFile(path.join(directory, "tests/exercise.spec.ts"), "export {};\n");
+    await expect(validatePublishedMaterials(root, [configured])).resolves.toEqual([]);
+  });
+
   it.skipIf(process.platform === "win32")(
     "rejects a published material that cannot be read",
     async () => {
@@ -505,6 +561,72 @@ describe("course manifest", () => {
         expect.stringContaining("answers.json нельзя включать"),
         expect.stringContaining("sensitive file private.pem"),
         expect.stringContaining("одновременно указан")
+      ])
+    );
+  });
+
+  it("validates safe checkTargets and requires one for browser checks", () => {
+    const createManifest = (session: Record<string, unknown>) => ({
+      profiles: [],
+      assumedConcepts: [],
+      sessionPolicy: { minMinutes: 30, maxMinutes: 60 },
+      modules: [
+        {
+          id: "01",
+          slug: "sample",
+          sessions: [
+            {
+              id: "01-01",
+              title: "One",
+              minutes: 30,
+              kind: "test",
+              outcome: "Outcome",
+              done: "Done",
+              checks: ["unit", "browser"],
+              evidence: {
+                produces: ["artifact"],
+                verifiedBy: ["automated"]
+              },
+              requires: [],
+              introduces: ["one"],
+              defers: [],
+              ...session
+            }
+          ]
+        }
+      ],
+      capstone: { id: "capstone", sessions: [] }
+    });
+
+    expect(
+      validateManifest(
+        createManifest({
+          checkTargets: {
+            unit: "tests/exercise.test.js",
+            browser: "tests/exercise.spec.ts"
+          }
+        })
+      )
+    ).toEqual([]);
+
+    const missing = validateManifest(createManifest({ checkTargets: {} }));
+    expect(missing).toContain("01-01: check browser требует checkTargets.browser");
+
+    const unsafe = validateManifest(
+      createManifest({
+        checks: ["unit"],
+        checkTargets: {
+          unit: "../outside.test.ts",
+          browser: "unused.spec.ts",
+          quiz: "quiz.json"
+        }
+      })
+    );
+    expect(unsafe).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining("checkTargets.unit содержит небезопасный путь"),
+        expect.stringContaining("checkTargets.browser задан без check browser"),
+        expect.stringContaining("checkTargets содержит неподдерживаемый check quiz")
       ])
     );
   });

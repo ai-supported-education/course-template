@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import {
   CONTENT_REVIEW_OPENING_MARKER,
   CONTENT_REVIEW_PROTOCOL,
+  CONTENT_REVIEW_PROTOCOL_V3,
   formatPreparedContentReview,
   getContentReviewStatus,
   parseContentReviewStage,
@@ -359,6 +360,158 @@ describe("author content review", () => {
     expect(publicRecord.protocol).toBe(CONTENT_REVIEW_PROTOCOL);
   });
 
+  it("builds a separate subject packet with learner, author, source and toolchain contracts for v3", async () => {
+    const root = await createV3Workspace();
+    const prepared = await prepareContentReview(root, "session", "01-02");
+
+    expect(prepared.protocol).toBe(CONTENT_REVIEW_PROTOCOL_V3);
+    expect(prepared.stages).toEqual(["subject", "novice", "consistency"]);
+    expect(path.basename(prepared.subjectPacketPath ?? "")).toBe(
+      "03-subject.md"
+    );
+    const subject = await readFile(prepared.subjectPacketPath!, "utf8");
+    const cliOutput = formatPreparedContentReview(prepared);
+
+    expect(subject).toContain("## Learner contract");
+    expect(subject).toContain("Current explanation");
+    expect(subject).toContain("Current late explanation");
+    expect(subject).toContain("## Author contract");
+    expect(subject).toContain("Secret rubric");
+    expect(subject).toContain("acceptance marker");
+    expect(subject).toContain("expected starter failure marker");
+    expect(subject).toContain("## Source ledger (curriculum/source-ledger.json)");
+    expect(subject).toContain("Primary JavaScript source");
+    expect(subject).toContain("## Toolchain documents");
+    expect(subject).toContain("toolchain package marker");
+    expect(subject).toContain('"target":"ESNext"');
+    expect(subject).not.toContain("learner draft");
+    expect(subject).not.toContain("private key marker");
+    expect(subject).not.toContain("hidden hint marker");
+    expect(subject).not.toContain("reference solution marker");
+
+    expect(cliOutput).toContain("ТРЁХ независимых fresh subagents");
+    expect(cliOutput).toContain("Subject packet:");
+    expect(cliOutput).toContain("--record subject session 01-02");
+    expect(cliOutput).toContain("--record novice session 01-02");
+    expect(cliOutput).toContain("--record consistency session 01-02");
+
+    const modulePrepared = await prepareContentReview(root, "module", "01");
+    const moduleSubject = await readFile(
+      modulePrepared.subjectPacketPath!,
+      "utf8"
+    );
+    expect(moduleSubject).toContain('"scope": "module"');
+    expect(moduleSubject).toContain('"id": "01-01"');
+    expect(moduleSubject).toContain('"id": "01-03"');
+  });
+
+  it("includes source ledger and toolchain documents in the v3 content hash", async () => {
+    const root = await createV3Workspace();
+    const before = await prepareContentReview(root, "session", "01-02");
+    const ledgerPath = path.join(root, "curriculum/source-ledger.json");
+    const ledger = JSON.parse(await readFile(ledgerPath, "utf8")) as {
+      sources: Array<{ title: string }>;
+    };
+    ledger.sources[0]!.title = "Changed primary JavaScript source";
+    await writeFile(ledgerPath, `${JSON.stringify(ledger, null, 2)}\n`);
+    const afterLedger = await prepareContentReview(root, "session", "01-02");
+    expect(afterLedger.contentHash).not.toBe(before.contentHash);
+
+    await writeFile(
+      path.join(root, "tsconfig.json"),
+      '{"compilerOptions":{"target":"ES2024"}}\n'
+    );
+    const afterToolchain = await prepareContentReview(root, "session", "01-02");
+    expect(afterToolchain.contentHash).not.toBe(afterLedger.contentHash);
+  });
+
+  it("requires three current v3 passes and writes a schema v3 attestation", async () => {
+    const root = await createV3Workspace();
+    const subjectPath = path.join(root, "subject-report.md");
+    const novicePath = path.join(root, "novice-report.md");
+    const consistencyPath = path.join(root, "consistency-report.md");
+    await writeFile(subjectPath, validSubjectReport("PASS"));
+    await writeFile(novicePath, validNoviceReport("PASS"));
+    await writeFile(consistencyPath, validConsistencyReport("PASS"));
+
+    await recordContentReview(
+      root,
+      "novice",
+      "session",
+      "01-02",
+      "PASS",
+      novicePath
+    );
+    await recordContentReview(
+      root,
+      "consistency",
+      "session",
+      "01-02",
+      "PASS",
+      consistencyPath
+    );
+    let status = await getContentReviewStatus(root, "session", "01-02");
+    expect(status.stages).toEqual(["subject", "novice", "consistency"]);
+    expect(status.reviews.subject.record).toBeNull();
+    expect(status.current).toBe(false);
+    await expect(
+      writeContentReviewAttestation(root, "session", "01-02")
+    ).rejects.toThrow("три актуальных content-review PASS");
+
+    const subjectRecord = await recordContentReview(
+      root,
+      "subject",
+      "session",
+      "01-02",
+      "PASS",
+      subjectPath
+    );
+    status = await getContentReviewStatus(root, "session", "01-02");
+    expect(status.reviews.subject.current).toBe(true);
+    expect(status.current).toBe(true);
+
+    const attestation = await writeContentReviewAttestation(
+      root,
+      "session",
+      "01-02"
+    );
+    const publicRecord = JSON.parse(
+      await readFile(attestation.path, "utf8")
+    ) as {
+      schemaVersion: number;
+      protocol: string;
+      reviews: Record<"subject" | "novice" | "consistency", Record<string, string>>;
+    };
+    expect(publicRecord.schemaVersion).toBe(3);
+    expect(publicRecord.protocol).toBe(CONTENT_REVIEW_PROTOCOL_V3);
+    expect(Object.keys(publicRecord.reviews)).toEqual([
+      "subject",
+      "novice",
+      "consistency"
+    ]);
+    expect(publicRecord.reviews.subject.reviewedAt).toBe(
+      subjectRecord.reviewedAt
+    );
+    expect(publicRecord.reviews.subject.reportSha256).toMatch(/^[a-f0-9]{64}$/);
+  });
+
+  it("rejects a subject record for the legacy protocol", async () => {
+    const root = await createWorkspace();
+    const reportPath = path.join(root, "subject-report.md");
+    await writeFile(reportPath, validSubjectReport("PASS"));
+
+    await expect(
+      recordContentReview(
+        root,
+        "subject",
+        "session",
+        "01-02",
+        "PASS",
+        reportPath
+      )
+    ).rejects.toThrow("недоступен для protocol");
+  });
+
   it("invalidates both stages after an opening or reviewed contract changes", async () => {
     const root = await createWorkspace();
     await recordBothPasses(root, "session", "01-02");
@@ -582,6 +735,25 @@ describe("author content review", () => {
     await expect(
       recordContentReview(root, "consistency", "session", "01-02", "PASS", reportPath)
     ).rejects.toThrow("## Continuity and profiles");
+
+    const v3Root = await createV3Workspace();
+    await writeFile(
+      reportPath,
+      validSubjectReport("PASS").replace(
+        "## Source ledger audit",
+        "## Source notes"
+      )
+    );
+    await expect(
+      recordContentReview(
+        v3Root,
+        "subject",
+        "session",
+        "01-02",
+        "PASS",
+        reportPath
+      )
+    ).rejects.toThrow("## Source ledger audit");
   });
 
   it("rejects missing opening marker in every required learner README", async () => {
@@ -616,10 +788,11 @@ describe("author content review", () => {
   });
 
   it("parses only canonical review stages", () => {
+    expect(parseContentReviewStage("subject")).toBe("subject");
     expect(parseContentReviewStage("novice")).toBe("novice");
     expect(parseContentReviewStage("consistency")).toBe("consistency");
     expect(() => parseContentReviewStage("first-contact")).toThrow(
-      "novice или consistency"
+      "subject, novice или consistency"
     );
   });
 });
@@ -820,6 +993,68 @@ async function createWorkspace(): Promise<string> {
   return root;
 }
 
+async function createV3Workspace(): Promise<string> {
+  const root = await createWorkspace();
+  const manifestPath = path.join(root, "curriculum/course.json");
+  const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as {
+    reviewProtocol?: string;
+    toolchainFiles?: string[];
+    modules: Array<{ sessions: Array<Record<string, unknown>> }>;
+    capstone: { sessions: Array<Record<string, unknown>> };
+  };
+  manifest.reviewProtocol = CONTENT_REVIEW_PROTOCOL_V3;
+  manifest.toolchainFiles = ["package.json", "tsconfig.json"];
+  for (const session of [
+    ...manifest.modules.flatMap((module) => module.sessions),
+    ...manifest.capstone.sessions
+  ]) {
+    const checks = Array.isArray(session.checks) ? session.checks : [];
+    if (checks.includes("unit")) {
+      session.authorProof = {
+        check: "unit",
+        expectedStarterFailure: "expected starter failure marker",
+        solutionPatch: "author-proof/minimal.patch",
+        counterexamplePatches: ["author-proof/counterexample.patch"]
+      };
+    }
+  }
+  await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+  await writeFile(
+    path.join(root, "curriculum/source-ledger.json"),
+    `${JSON.stringify(
+      {
+        schemaVersion: 1,
+        sources: [
+          {
+            id: "primary-javascript-source",
+            title: "Primary JavaScript source",
+            url: "https://example.com/primary-javascript",
+            kind: "standard",
+            checkedAt: "2026-09-07",
+            supports: [
+              "previous-concept",
+              "current-concept",
+              "next-concept",
+              "future-concept"
+            ]
+          }
+        ]
+      },
+      null,
+      2
+    )}\n`
+  );
+  await writeFile(
+    path.join(root, "package.json"),
+    '{"name":"toolchain package marker","private":true}\n'
+  );
+  await writeFile(
+    path.join(root, "tsconfig.json"),
+    '{"compilerOptions":{"target":"ESNext"}}\n'
+  );
+  return root;
+}
+
 async function createTwoModuleWorkspace(): Promise<string> {
   const root = await createWorkspace();
   const manifestPath = path.join(root, "curriculum/course.json");
@@ -927,6 +1162,32 @@ function validNoviceReport(verdict: "PASS" | "NEEDS_REWRITE"): string {
     "",
     "## Continuity",
     "The previous result and next contract are connected.",
+    "",
+    "## Findings",
+    "No blockers.",
+    "",
+    "## Verdict rationale",
+    "Complete."
+  ].join("\n");
+}
+
+function validSubjectReport(verdict: "PASS" | "NEEDS_REWRITE"): string {
+  return [
+    "# Subject content review",
+    "",
+    `Verdict: ${verdict}`,
+    "",
+    "## Coverage map",
+    "Claims are mapped to primary sources.",
+    "",
+    "## Accuracy and currentness",
+    "Claims are accurate for the declared versions.",
+    "",
+    "## Runtime boundaries",
+    "Language, host, runtime and toolchain are distinct.",
+    "",
+    "## Source ledger audit",
+    "The ledger supports the material.",
     "",
     "## Findings",
     "No blockers.",

@@ -1,5 +1,19 @@
 # Руководство автора курса
 
+## 0. Проверьте roadmap до написания карточек
+
+Сначала опишите весь маршрут в `curriculum/course.json`, а изменчивые и предметные
+основания — в `curriculum/source-ledger.json`. Запустите
+`pnpm author:roadmap-review`: отдельный fresh curriculum-agent проверяет progression
+и capstone traceability, отдельный fresh subject-agent — охват, корректность и
+currentness по первичным источникам. После двух PASS запишите их и выполните
+`pnpm author:roadmap-review attest`.
+
+Любое исправление roadmap или источников повторно проверяется новыми агентами.
+Curriculum и subject используют разные hashes: изменение source metadata не
+инвалидирует структурный curriculum PASS, а изменение progression инвалидирует
+его.
+
 ## 1. Зафиксируйте аудиторию и проверяемый финал
 
 До списка тем опишите в `curriculum/course.json` конкретные входные знания,
@@ -24,9 +38,15 @@ README, название/описание repository и другие template pl
 - `done` — обязательный критерий завершения;
 - `requires`, `introduces`, `defers` — границы понятий;
 - `checks` — только реально подключённые runner checks;
+- `checkTargets` — безопасные относительные test/config paths, если legacy target
+  не подходит;
 - `evidence.produces` — какие артефакты останутся;
 - `evidence.verifiedBy` — `automated`, `empirical`, `agent` и/или
   `manual-approval`.
+
+Lockfile, package manifest и configs, влияющие на проверки, перечислите в
+`toolchainFiles`. Не добавляйте `.npmrc`, credentials или произвольные shell
+команды.
 
 Runner показывает учащемуся `title`, `outcome` и `done` до открытия карточки.
 Формулируйте эти поля естественно и компактно; подробный перечень внутренних
@@ -177,10 +197,22 @@ git switch -
    вариант; для lab — безопасный dry run/simulation и корректный cleanup.
 5. Убедитесь, что evidence действительно позволяет применить rubric.
 
+Для v3 code exercise этот шаг исполняется и фиксируется через `authorProof`:
+
+```bash
+pnpm author:proof <id>
+```
+
+Solution и counterexample patches хранятся только в `course-support`. Команда
+создаёт отдельную копию для starter, минимального solution и каждого
+counterexample, запускает один acceptance check и публикует лишь hashes evidence.
+Падение starter должно содержать заявленный фрагмент причины; зелёный starter или
+прошедший counterexample блокируют публикацию.
+
 Не записывайте в материал результаты, которых не наблюдали. Если реальную среду
 проверить нельзя, честно ограничьте evidence fixture/simulation.
 
-## 8. Запустите двух независимых fresh reviewers
+## 8. Запустите трёх независимых fresh reviewers
 
 Соберите пакет:
 
@@ -202,32 +234,38 @@ learner-facing маршрут, проверяет объяснения, прим
 handoff, после чего возвращает итоговый novice `PASS|NEEDS_REWRITE`. Его ранние
 выводы нельзя смягчить поздним объяснением.
 
+Независимо запустите subject-subagent с `fork_turns="none"` и передайте ему только
+subject packet. Он проверяет утверждения и currentness по первичным источникам из
+`source-ledger.json`, явно различает стандарт языка, host API, runtime и toolchain
+и не видит отчёты novice/consistency.
+
 Независимо запустите consistency-subagent с `fork_turns="none"`. Не передавайте
 ему novice packet, checkpoint или report. Сначала дайте только `01-blind.md` и
 попросите письменно реконструировать learner material. Лишь после этого откройте
 `02-consistency.md`: агент сверяет profiles, concept graph, rubric, checks,
 evidence, safety и соседние карточки. Для транзитивных prerequisites он использует
 provenance-карту и приложенные learner README source sessions, а не требует
-введения каждого concept в immediate previous card. Оба reviewer read-only; не
+введения каждого concept в immediate previous card. Все reviewers read-only; не
 передавайте им авторские рассуждения или отчёт другого агента.
 
 После отчёта:
 
 ```bash
+pnpm author:content-review --record subject session <id> PASS --report <path>
 pnpm author:content-review --record novice session <id> PASS --report <path>
 pnpm author:content-review --record consistency session <id> PASS --report <path>
 pnpm author:content-review status session <id>
 pnpm author:content-review attest session <id>
 ```
 
-При BLOCKER/MAJOR исправьте материал и используйте двух новых fresh subagents:
+При BLOCKER/MAJOR исправьте материал и используйте новых fresh subagents:
 нельзя продолжать прежний novice checkpoint или consistency reconstruction, потому
 что эти диалоги уже видели старую версию. Центральный неизвестный identifier в
-opening остаётся MAJOR, даже если определён ниже marker. После двух PASS всех
-карточек повторите парную процедуру для module и запишите module attestation. Raw
+opening остаётся MAJOR, даже если определён ниже marker. После трёх PASS всех
+карточек повторите тройную процедуру для module и запишите module attestation. Raw
 first-contact checkpoints, packets и reports остаются локально в `.authoring/`;
-публичная schema v2 attestation хранит отдельные hash итоговых отчётов novice и
-consistency.
+публичная schema v3 attestation хранит отдельные hash итоговых отчётов subject,
+novice и consistency. Перед merge выполните `pnpm author:publication-check`.
 
 ## 9. Проведите пилот
 
