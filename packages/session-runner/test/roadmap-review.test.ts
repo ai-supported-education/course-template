@@ -52,14 +52,56 @@ describe("roadmap review v3", () => {
     expect(stale.reviews.curriculum.current).toBe(true);
     expect(stale.reviews.subject.current).toBe(false);
   });
+
+  it("seals profiles, course context and toolchain into the subject packet", async () => {
+    const root = await createWorkspace();
+    const prepared = await prepareRoadmapReview(root);
+    const packet = await readFile(prepared.subjectPacketPath, "utf8");
+
+    expect(packet).toContain("## Course profile: software");
+    expect(packet).toContain("Profile evidence boundary");
+    expect(packet).toContain("## Course context: curriculum/context.md");
+    expect(packet).toContain("Version-sensitive course context");
+    expect(packet).toContain("### Toolchain: package.json");
+    expect(packet).toContain('{"packageManager":"pnpm@10.5.0"}');
+
+    await writeFile(
+      path.join(root, "package.json"),
+      JSON.stringify({ packageManager: "pnpm@10.6.0" })
+    );
+    const changedToolchain = await prepareRoadmapReview(root);
+    expect(changedToolchain.hashes.curriculum).toBe(prepared.hashes.curriculum);
+    expect(changedToolchain.hashes.subject).not.toBe(prepared.hashes.subject);
+
+    await writeFile(
+      path.join(root, "curriculum/context.md"),
+      "Version-sensitive course context changed\n"
+    );
+    const changedContext = await prepareRoadmapReview(root);
+    expect(changedContext.hashes.curriculum).not.toBe(prepared.hashes.curriculum);
+    expect(changedContext.hashes.subject).not.toBe(changedToolchain.hashes.subject);
+  });
 });
 
 async function createWorkspace(): Promise<string> {
   const root = await mkdtemp(path.join(os.tmpdir(), "roadmap-review-"));
   const session = path.join(root, "modules/01-sample/sessions/01-01");
   await mkdir(path.join(root, "curriculum"), { recursive: true });
+  await mkdir(path.join(root, "docs/course-profiles"), { recursive: true });
   await mkdir(session, { recursive: true });
   await writeFile(path.join(root, "README.md"), "# Course\n");
+  await writeFile(
+    path.join(root, "package.json"),
+    JSON.stringify({ packageManager: "pnpm@10.5.0" })
+  );
+  await writeFile(
+    path.join(root, "curriculum/context.md"),
+    "Version-sensitive course context\n"
+  );
+  await writeFile(
+    path.join(root, "docs/course-profiles/software.md"),
+    "Profile evidence boundary\n"
+  );
   await writeFile(path.join(session, "README.md"), "# Session\n");
   await writeFile(path.join(session, "rubric.md"), "# Rubric\n");
   await writeFile(
@@ -69,9 +111,9 @@ async function createWorkspace(): Promise<string> {
       reviewProtocol: "roadmap-subject-novice-consistency-v1",
       language: "ru",
       audience: "Experienced JavaScript developers",
-      profiles: [],
-      courseContextFiles: [],
-      toolchainFiles: [],
+      profiles: ["software"],
+      courseContextFiles: ["curriculum/context.md"],
+      toolchainFiles: ["package.json"],
       assumedConcepts: [],
       estimatedHours: { min: 1, max: 1 },
       sessionPolicy: {

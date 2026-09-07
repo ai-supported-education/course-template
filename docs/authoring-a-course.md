@@ -8,7 +8,10 @@
 предметные основания — в `curriculum/source-ledger.json`. Запустите
 `pnpm author:roadmap-review`: отдельный fresh curriculum-agent проверяет progression
 и capstone traceability, отдельный fresh subject-agent — охват, корректность и
-currentness по первичным источникам. После двух PASS запишите их и выполните
+currentness по первичным источникам. Subject packet содержит тот же корневой
+README, profiles, `courseContextFiles`, source ledger и `toolchainFiles`, на
+которые опирается roadmap: versioned preflight или toolchain claim нельзя оставить
+доступным только автору. После двух PASS запишите их и выполните
 `pnpm author:roadmap-review attest`.
 
 Полный цикл записи выглядит так:
@@ -21,10 +24,11 @@ pnpm author:roadmap-review status
 pnpm author:roadmap-review attest
 ```
 
-Исправление progression инвалидирует оба roadmap review; изменение только source
-metadata — subject review. Повторите помеченные как stale стадии новыми агентами.
-Curriculum и subject используют разные hashes, поэтому source metadata не
-инвалидирует структурный curriculum PASS.
+Исправление progression либо общего course context инвалидирует оба roadmap
+review; изменение только source metadata или `toolchainFiles` — subject review.
+Повторите помеченные как stale стадии новыми агентами. Curriculum и subject
+используют разные hashes, поэтому чистая правка ledger/toolchain не инвалидирует
+структурный curriculum PASS.
 
 ## 1. Зафиксируйте аудиторию и проверяемый финал
 

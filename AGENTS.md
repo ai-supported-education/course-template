@@ -88,7 +88,10 @@ acceptance test обязан:
 корневой learner README и полный manifest, затем выполните обязательный
 roadmap-review: `pnpm author:roadmap-review`. Curriculum-agent и subject-agent
 запускаются независимо с `fork_turns="none"`, получают только свой packet и не
-видят историю генерации либо отчёт другого reviewer. После исправлений каждая
+видят историю генерации либо отчёт другого reviewer. Subject packet обязан
+содержать root README, profiles, course context, source ledger и фактические
+toolchain documents; предметный reviewer не должен угадывать скрытый preflight
+или версию из файлов, которых ему не показали. После исправлений каждая
 помеченная `STALE` стадия повторяется новым агентом, затем записывается schema v3
 roadmap attestation.
 

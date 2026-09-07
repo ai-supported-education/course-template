@@ -5,6 +5,7 @@ import { loadCourseContextDocuments } from "./course-context.js";
 import { flattenRoadmap, loadManifest } from "./manifest.js";
 import { loadCourseProfileDocuments } from "./profiles.js";
 import { loadSourceLedger, SOURCE_LEDGER_PATH } from "./source-ledger.js";
+import { loadToolchainDocuments } from "./toolchain.js";
 
 export const ROADMAP_REVIEW_PROTOCOL =
   "roadmap-subject-novice-consistency-v1" as const;
@@ -64,6 +65,10 @@ export async function prepareRoadmapReview(
     root,
     manifest.courseContextFiles ?? []
   );
+  const toolchain = await loadToolchainDocuments(
+    root,
+    manifest.toolchainFiles ?? []
+  );
   const rootReadme = await readFile(path.join(root, "README.md"), "utf8");
   const roadmap = flattenRoadmap(manifest);
 
@@ -96,7 +101,11 @@ export async function prepareRoadmapReview(
     JSON.stringify({
       protocol: ROADMAP_REVIEW_PROTOCOL,
       roadmap: roadmap.map((session) => roadmapSessionContract(session.definition)),
-      ledger
+      ledger,
+      rootReadme,
+      profiles: profiles.map((profile) => ({ id: profile.id, source: profile.source })),
+      contexts,
+      toolchain
     })
   );
   const hashes = { curriculum: curriculumHash, subject: subjectHash };
@@ -117,7 +126,14 @@ export async function prepareRoadmapReview(
   );
   await writeFile(
     subjectPacketPath,
-    buildSubjectPacket(manifest, ledger),
+    buildSubjectPacket(
+      manifest,
+      ledger,
+      rootReadme,
+      profiles,
+      contexts,
+      toolchain
+    ),
     "utf8"
   );
 
@@ -301,14 +317,18 @@ function buildCurriculumPacket(
 
 function buildSubjectPacket(
   manifest: Awaited<ReturnType<typeof loadManifest>>,
-  ledger: Awaited<ReturnType<typeof loadSourceLedger>>
+  ledger: Awaited<ReturnType<typeof loadSourceLedger>>,
+  rootReadme: string,
+  profiles: Awaited<ReturnType<typeof loadCourseProfileDocuments>>,
+  contexts: Awaited<ReturnType<typeof loadCourseContextDocuments>>,
+  toolchain: Awaited<ReturnType<typeof loadToolchainDocuments>>
 ): string {
   return ensureTrailingNewline([
     "# Fresh subject and currentness review: full course roadmap",
     "",
     "## Reviewer contract",
     "",
-    "Вы не участвовали в генерации курса. Не открывайте repository или curriculum-agent report. Проверьте предметную корректность, современность и достаточность source ledger. Отличайте стандарт языка от host API, runtime и toolchain. Каждое существенное утверждение должно быть проверяемо по первичному источнику; inference помечайте как inference.",
+    "Вы не участвовали в генерации курса. Не открывайте repository или curriculum-agent report. Проверьте предметную корректность, современность и достаточность source ledger, learner README, profiles, course context и фактических toolchain documents ниже. Отличайте стандарт языка от host API, runtime и toolchain. Каждое существенное утверждение должно быть проверяемо по первичному источнику или воспроизводимому versioned evidence; inference помечайте как inference.",
     "Верните H1, строку `Verdict: PASS|NEEDS_REWRITE` и разделы `Coverage map`, `Accuracy and currentness`, `Runtime boundaries`, `Source ledger audit`, `Findings`, `Verdict rationale`.",
     "",
     "## Roadmap contract",
@@ -332,12 +352,51 @@ function buildSubjectPacket(
     }, null, 2),
     "```",
     "",
+    "## Learner README",
+    "",
+    rootReadme,
+    ...profiles.flatMap((profile) => [
+      "",
+      `## Course profile: ${profile.id}`,
+      "",
+      profile.source
+    ]),
+    ...contexts.flatMap((context) => [
+      "",
+      `## Course context: ${context.path}`,
+      "",
+      context.source
+    ]),
+    "",
     `## Source ledger (${SOURCE_LEDGER_PATH})`,
     "",
     "```json",
     JSON.stringify(ledger, null, 2),
-    "```"
+    "```",
+    "",
+    "## Toolchain documents",
+    "",
+    renderToolchainDocuments(toolchain)
   ].join("\n"));
+}
+
+function renderToolchainDocuments(
+  documents: Awaited<ReturnType<typeof loadToolchainDocuments>>
+): string {
+  if (documents.length === 0) {
+    return "Manifest не перечисляет toolchainFiles.";
+  }
+  return documents
+    .map((document) =>
+      [
+        `### Toolchain: ${document.path}`,
+        "",
+        "~~~~",
+        document.source.trimEnd(),
+        "~~~~"
+      ].join("\n")
+    )
+    .join("\n\n");
 }
 
 function roadmapSessionContract(session: {

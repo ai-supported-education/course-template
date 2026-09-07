@@ -69,6 +69,9 @@ GitHub переносит из template только default branch, поэто�
 Curriculum-reviewer проверяет маршрут, prerequisites, размер карточек и связь с
 capstone. Независимый subject-reviewer сверяет охват и современность по
 `curriculum/source-ledger.json`, отделяя стандарт языка от host/runtime/toolchain.
+Его sealed packet также включает root README, выбранные profiles, course context
+и перечисленные в manifest toolchain documents, поэтому PASS относится к
+реальному preflight и зафиксированным версиям, а не к урезанному пересказу.
 
 Для code exercise команда `pnpm author:proof <session-id>` в изолированных копиях
 доказывает одной и той же проверкой три состояния: starter падает по целевой
