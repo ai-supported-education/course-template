@@ -1,18 +1,30 @@
 # Руководство автора курса
 
-## 0. Проверьте roadmap до написания карточек
+## 0. Подготовьте вход в курс и проверьте roadmap
 
-Сначала опишите весь маршрут в `curriculum/course.json`, а изменчивые и предметные
-основания — в `curriculum/source-ledger.json`. Запустите
+Сначала замените template identity и корневой README: его вступление задаёт
+реальную проблему, аудиторию и путь курса, но ещё не объясняет материал отдельных
+карточек. Затем опишите весь маршрут в `curriculum/course.json`, а изменчивые и
+предметные основания — в `curriculum/source-ledger.json`. Запустите
 `pnpm author:roadmap-review`: отдельный fresh curriculum-agent проверяет progression
 и capstone traceability, отдельный fresh subject-agent — охват, корректность и
 currentness по первичным источникам. После двух PASS запишите их и выполните
 `pnpm author:roadmap-review attest`.
 
-Любое исправление roadmap или источников повторно проверяется новыми агентами.
-Curriculum и subject используют разные hashes: изменение source metadata не
-инвалидирует структурный curriculum PASS, а изменение progression инвалидирует
-его.
+Полный цикл записи выглядит так:
+
+```bash
+pnpm author:roadmap-review
+pnpm author:roadmap-review --record curriculum PASS --report <path>
+pnpm author:roadmap-review --record subject PASS --report <path>
+pnpm author:roadmap-review status
+pnpm author:roadmap-review attest
+```
+
+Исправление progression инвалидирует оба roadmap review; изменение только source
+metadata — subject review. Повторите помеченные как stale стадии новыми агентами.
+Curriculum и subject используют разные hashes, поэтому source metadata не
+инвалидирует структурный curriculum PASS.
 
 ## 1. Зафиксируйте аудиторию и проверяемый финал
 
@@ -26,8 +38,9 @@ Curriculum и subject используют разные hashes: изменени
 безопасные текстовые файлы входят в review packets и content hash, поэтому fresh
 reviewer получает ту же модель аудитории, что и автор.
 
-После `Use this template` замените не только placeholder module, но и корневой
-README, название/описание repository и другие template placeholders. Для
+После roadmap-review замените placeholder module и другие оставшиеся template
+placeholders. Корневой README и repository identity уже должны быть реальными на
+шаге 0. Для
 намеренно короткого курса допустим пустой `capstone.sessions`, если последний
 интеграционный результат уже явно завершён в обычной сессии и скрытого продолжения
 нет.
@@ -150,9 +163,12 @@ README даёт достаточный контекст, чтобы учащий
 ## 5. Согласуйте checks с evidence
 
 `pnpm session:check` — локальная автоматизация; он не запускает Codex. Базовый
-runner знает `quiz`, `review` и TypeScript/Vitest-реализации `typecheck`, `unit`,
-`integration`. Новый label без registry implementation не работает. Для другого
-языка замените adapter и добавьте проверку, доказывающую его падение/успех.
+runner знает `quiz`, `review`, `typecheck`, `unit`, `integration` и `browser`.
+`unit`/`integration` запускают Vitest и принимают `.js`, `.mjs`, `.ts` или `.tsx`
+test path через `checkTargets`; legacy default остаётся `exercise.test.tsx`.
+`browser` запускает явно указанный Playwright test. Новый label без registry
+implementation не работает. Для другого языка замените adapter и добавьте
+проверку, доказывающую его падение/успех.
 
 Для code exercise starter сохраняет одну целевую проблему, acceptance test падает
 по ожидаемой причине и проходит после минимального решения. Test проверяет
@@ -197,7 +213,8 @@ git switch -
    вариант; для lab — безопасный dry run/simulation и корректный cleanup.
 5. Убедитесь, что evidence действительно позволяет применить rubric.
 
-Для v3 code exercise этот шаг исполняется и фиксируется через `authorProof`:
+Для v3 любая published session с `typecheck`, `unit`, `integration` или `browser`
+считается исполняемым упражнением и требует `authorProof`:
 
 ```bash
 pnpm author:proof <id>
@@ -223,7 +240,9 @@ pnpm author:content-review session <id>
 Запустите novice-subagent с `fork_turns="none"` и передайте ему только путь к
 `00-novice.md`. Он построчно проверяет opening prefixes, antecedents, identifiers и
 полноту первого объясняющего примера, затем возвращает не финальный verdict, а
-first-contact checkpoint `CLEAR|REWRITE`. Для later session packet перечисляет
+first-contact checkpoint `CLEAR|REWRITE`. Сохраните его в
+`.authoring/content-review/checkpoints/<scope>-<id>-novice-opening.md`. Для later
+session packet перечисляет
 outcomes и DONE всех уже пройденных published-карточек. В module review они
 появляются между openings в реальном порядке прохождения: результат завершённой
 карточки доступен следующей, но не исправляет её собственный opening задним числом.

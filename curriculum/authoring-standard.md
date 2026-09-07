@@ -156,10 +156,12 @@ capstone. Fresh subject-agent сверяет охват и современно�
 произвольная shell-команда в manifest запрещена. Legacy defaults
 `tsconfig.json`/`exercise.test.tsx` сохранены, browser target всегда задаётся явно.
 
-Для code exercise v3-процесс требует `authorProof`: один выбранный automated check,
-ожидаемый фрагмент ошибки starter, solution patch и минимум один counterexample
-patch из `course-support`. `pnpm author:proof` запускает каждую версию в отдельной
-копии и публикует только hashes evidence, не reference answer.
+В v3 любая published session с `typecheck`, `unit`, `integration` или `browser`
+требует `authorProof`: один выбранный automated check, ожидаемый фрагмент ошибки
+starter, solution patch и минимум один counterexample patch из `course-support`.
+`pnpm author:proof` запускает каждую версию в отдельной копии и публикует только
+hashes evidence, не reference answer. Vitest target может быть обычным `.js` или
+`.mjs`; TypeScript не является обязательным для JavaScript-курса.
 
 ## Лабораторная и внешняя практика
 

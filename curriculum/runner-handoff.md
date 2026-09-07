@@ -18,12 +18,17 @@ Runner читает `curriculum/course.json`, разрешает одну акт
 
 Author-side команды не используют learner progress:
 
+Manifest `version: 1` — версия структуры карты курса. Термин «schema v3» ниже
+относится только к review attestations; новый процесс выбирается отдельным
+`reviewProtocol`.
+
 - `author:roadmap-review` — собрать независимые curriculum и subject packets для
   полного roadmap;
 - `author:roadmap-review --record ...`, `status`, `attest` — записать два verdict
   и schema v3 roadmap attestation;
-- `author:proof [<id>...]` — воспроизвести red/green/counterexample proof code
-  exercises в изолированных копиях;
+- `author:proof [<id>...]` — воспроизвести red/green/counterexample proof каждой
+  session с `typecheck`, `unit`, `integration` или `browser` в изолированных
+  копиях;
 - `author:content-review session <id>` — собрать subject, novice, blind и
   consistency packets;
 - `author:content-review module <id>` — собрать module packet;
@@ -38,7 +43,8 @@ Author-side команды не используют learner progress:
 
 CLI не запускает агентов. Родительский Codex создаёт fresh subagents по
 правилам `AGENTS.md`. Novice сначала получает только `00-novice.md`; после
-физически сохранённого first-contact checkpoint тот же агент отдельным follow-up
+сохранения first-contact checkpoint в
+`.authoring/content-review/checkpoints/<scope>-<id>-novice-opening.md` тот же агент отдельным follow-up
 получает `01-blind.md` и проверяет весь learner-facing материал. Независимый
 subject-agent отдельно сверяет утверждения и currentness с source ledger.
 Consistency-agent не видит чужие checkpoint/report: он читает `01-blind.md`,
@@ -67,7 +73,9 @@ Check label появляется только после трёх доказат
 
 Базовый runner поддерживает `quiz`, `review`, `typecheck`, `unit`, `integration`
 и `browser`. Для четырёх исполняемых checks `checkTargets` выбирает безопасный
-относительный config/test path; произвольные shell-команды запрещены. Они являются
+относительный config/test path; Vitest targets могут быть `.js`, `.mjs`, `.ts` или
+`.tsx`, а browser target запускается Playwright. Произвольные shell-команды
+запрещены. Эти adapters являются
 reference adapters для software profile, а не универсальными командами Java,
 hardware или lab-курсов.
 Остальные labels и другие adapters добавляются вместе с конкретным курсом и тестом

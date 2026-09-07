@@ -84,11 +84,13 @@ acceptance test обязан:
 Соблюдайте `curriculum/authoring-standard.md`. Стековые архитектурные правила не
 переносятся между курсами автоматически: подключайте только профиль нужного стека.
 
-Перед генерацией learner-facing материала в новом курсе выполните обязательный
+До генерации learner-facing карточек подготовьте реальную идентичность курса,
+корневой learner README и полный manifest, затем выполните обязательный
 roadmap-review: `pnpm author:roadmap-review`. Curriculum-agent и subject-agent
 запускаются независимо с `fork_turns="none"`, получают только свой packet и не
-видят историю генерации либо отчёт другого reviewer. После исправлений оба review
-повторяются новыми агентами, затем записывается schema v3 roadmap attestation.
+видят историю генерации либо отчёт другого reviewer. После исправлений каждая
+помеченная `STALE` стадия повторяется новым агентом, затем записывается schema v3
+roadmap attestation.
 
 После генерации или существенного изменения learner-facing материала выполните
 обязательный independent content-review тремя независимыми агентами:
@@ -96,7 +98,8 @@ roadmap-review: `pnpm author:roadmap-review`. Curriculum-agent и subject-agent
 1. Соберите packet через `pnpm author:content-review session <id>`.
 2. Запустите novice-subagent с `fork_turns="none"`. Сначала передайте только путь
    к `00-novice.md`; агент не открывает repository или другие packets и возвращает
-   отдельный first-contact checkpoint по opening. Физически сохраните checkpoint.
+   отдельный first-contact checkpoint по opening. Физически сохраните checkpoint в
+   `.authoring/content-review/checkpoints/<scope>-<id>-novice-opening.md`.
    Для later session packet содержит краткие outcomes и DONE всех уже пройденных
    published-карточек. В module packet результат каждой опубликованной карточки
    появляется сразу после её opening и служит контекстом только для следующих
@@ -132,7 +135,8 @@ roadmap-review: `pnpm author:roadmap-review`. Curriculum-agent и subject-agent
    Позднее объяснение не понижает finding неизвестного центрального identifier во
    opening.
 
-До content-review code exercise выполните `pnpm author:proof <id>`. Эта команда
+До content-review каждой published session с `typecheck`, `unit`, `integration`
+или `browser` выполните `pnpm author:proof <id>`. Эта команда
 обязана наблюдать целевое падение starter, PASS минимального solution patch и
 падение хотя бы одного правдоподобного counterexample на одной acceptance test.
 

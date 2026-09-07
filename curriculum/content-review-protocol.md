@@ -163,7 +163,9 @@ roadmap curriculum review. Так правка одного config или source
    заявленным prerequisites и opening.
 
 Результат первой фазы — отдельный checkpoint `CLEAR|REWRITE`, а не финальный
-verdict по карточке. Родитель физически сохраняет checkpoint до продолжения. При
+verdict по карточке. Родитель сохраняет его в
+`.authoring/content-review/checkpoints/<scope>-<id>-novice-opening.md` до
+продолжения. При
 `REWRITE` материал исправляется, и обе независимые проверки затем запускаются
 заново с новыми агентами. При `CLEAR` родитель продолжает тот же novice-диалог и
 передаёт только `01-blind.md`.
