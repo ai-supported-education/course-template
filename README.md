@@ -1,9 +1,10 @@
 # AI-supported course template
 
 Базовый шаблон для репозитория учебного курса, который проходится в IDE короткими
-сессиями. Это не готовый курс: после создания репозитория замените демонстрационный
-module, этот корневой README и repository metadata, затем заполните
-`curriculum/course.json` своей программой.
+сессиями. Это не готовый курс. После создания репозитория сначала задайте его
+identity и настоящий корневой README, затем замените placeholder в
+`curriculum/course.json` полным roadmap и заполните source ledger. Проверьте этот
+course-level контракт до генерации learner-facing карточек и module materials.
 
 Шаблон не предполагает, что любое обучение является code exercise: доступны
 каркасы для quiz, derivation, measurement lab и diagnostic. Общие правила
@@ -22,17 +23,20 @@ module, этот корневой README и repository metadata, затем за
 
 ## Создать новый курс
 
-Нажмите **Use this template** на GitHub, затем в новом репозитории:
+Нажмите **Use this template** на GitHub. В новом репозитории сначала замените
+repository metadata и корневой README, затем опишите аудиторию, полный roadmap и
+`curriculum/source-ledger.json`. После этого:
 
     pnpm install
     pnpm session:validate
-    pnpm session:next
+    pnpm author:roadmap-review
 
-Далее пройдите [руководство автора](docs/authoring-a-course.md). Сначала задайте
-аудиторию и карту курса, затем подготовьте только первую реальную сессию. Остальные
-карточки можно описать в manifest как `releaseStatus: "planned"`: runner покажет
-их в общей статистике, но не выдаст учащемуся незрелые материалы. При публикации
-карточка получает полный DONE/checks/evidence-контракт.
+Запишите два независимых roadmap PASS по
+[руководству автора](docs/authoring-a-course.md) и только затем подготовьте module
+README и первую реальную сессию. Остальные карточки оставьте в manifest как
+`releaseStatus: "planned"`: runner покажет их в общей статистике, но не выдаст
+учащемуся незрелые материалы. При публикации карточка получает полный
+DONE/checks/evidence-контракт.
 
 GitHub переносит из template только default branch, поэтому сразу создайте ref для
 закрытых от случайного просмотра материалов:
