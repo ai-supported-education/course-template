@@ -30,6 +30,11 @@ describe("author proof", () => {
     expect(result.value).toMatchObject({
       schemaVersion: 1,
       sessionId: "01-01",
+      runtime: {
+        node: process.version,
+        platform: process.platform,
+        arch: process.arch
+      },
       starter: { status: "EXPECTED_FAILURE" },
       solution: { status: "PASS" },
       counterexamples: [{ status: "EXPECTED_FAILURE" }]

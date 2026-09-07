@@ -410,6 +410,7 @@ describe("author content review", () => {
     expect(subject).toContain('"status": "EXPECTED_FAILURE"');
     expect(subject).toContain('"status": "PASS"');
     expect(subject).toContain("starter-output-hash-marker");
+    expect(subject).toContain('"node": "v24.0.0"');
     expect(subject).toContain("## Source ledger (curriculum/source-ledger.json)");
     expect(subject).toContain("Primary JavaScript source");
     expect(subject).toContain("## Toolchain documents");
@@ -1071,6 +1072,11 @@ async function createV3Workspace(): Promise<string> {
           schemaVersion: 1,
           sessionId,
           checkedAt: "2026-09-07T00:00:00.000Z",
+          runtime: {
+            node: "v24.0.0",
+            platform: "linux",
+            arch: "x64"
+          },
           sessionContentHash: "session-content-hash-marker",
           toolchainHash: "toolchain-hash-marker",
           definitionHash: "definition-hash-marker",

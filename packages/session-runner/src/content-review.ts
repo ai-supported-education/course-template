@@ -1503,6 +1503,13 @@ function sanitizeAuthorProofSummary(value: unknown): unknown {
     schemaVersion: value.schemaVersion,
     sessionId: value.sessionId,
     checkedAt: value.checkedAt,
+    runtime: isRecord(value.runtime)
+      ? {
+          node: value.runtime.node,
+          platform: value.runtime.platform,
+          arch: value.runtime.arch
+        }
+      : undefined,
     sessionContentHash: value.sessionContentHash,
     toolchainHash: value.toolchainHash,
     definitionHash: value.definitionHash,

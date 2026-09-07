@@ -15,6 +15,11 @@ export interface AuthorProofEvidence {
   schemaVersion: 1;
   sessionId: string;
   checkedAt: string;
+  runtime: {
+    node: string;
+    platform: NodeJS.Platform;
+    arch: string;
+  };
   sessionContentHash: string;
   toolchainHash: string;
   definitionHash: string;
@@ -101,6 +106,11 @@ export async function runAuthorProof(
     schemaVersion: 1,
     sessionId,
     checkedAt: new Date().toISOString(),
+    runtime: {
+      node: process.version,
+      platform: process.platform,
+      arch: process.arch
+    },
     sessionContentHash: await hashDirectory(getSessionDirectory(root, session)),
     toolchainHash: await hashToolchain(root, manifest.toolchainFiles ?? []),
     definitionHash: sha256(JSON.stringify(definition)),
@@ -152,6 +162,14 @@ export async function verifyAuthorProofEvidence(
   );
   if (proof.schemaVersion !== 1 || proof.sessionId !== session.definition.id) {
     problems.push(`${session.definition.id}: неверная proof schema или sessionId`);
+  }
+  if (
+    !proof.runtime ||
+    typeof proof.runtime.node !== "string" ||
+    typeof proof.runtime.platform !== "string" ||
+    typeof proof.runtime.arch !== "string"
+  ) {
+    problems.push(`${session.definition.id}: proof не содержит runtime metadata`);
   }
   if (proof.sessionContentHash !== expectedSessionHash) {
     problems.push(`${session.definition.id}: proof устарел после изменения session files`);
