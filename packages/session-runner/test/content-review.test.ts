@@ -88,6 +88,8 @@ describe("author content review", () => {
     expect(blind).toContain("## Learner walkthrough");
     expect(blind).toContain("## Explanation and examples");
     expect(blind).toContain("## Task, evidence and DONE");
+    expect(blind).toContain("прогноз обязан предшествовать первому запуску");
+    expect(blind).toContain("форму editable artifacts");
     expect(blind).toContain("## Continuity");
     expect(blind.indexOf("Current explanation")).toBeLessThan(
       blind.indexOf("timestamp_ms,latency_ms")
