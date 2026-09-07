@@ -1138,7 +1138,7 @@ async function buildBlindPacket(
     "",
     "## Task, evidence and DONE",
     "",
-    "Можно ли выполнить задание и доказать DONE только по learner-facing материалу, не открывая rubric, tests, hints или следующую карточку. Отдельно проверьте хронологию команд, форму editable artifacts и полный handoff к обязательному agent review.",
+    "Можно ли выполнить задание и доказать DONE только по learner-facing материалу, не открывая rubric, tests, hints или следующую карточку. Отдельно проверьте хронологию команд, форму editable artifacts и полный handoff к обязательному agent review. Если требуются фактические red/green запуски, найдите сохраняемый artifact для версии среды, команды, exit code и наблюдения: эфемерного terminal output недостаточно.",
     "",
     "## Continuity",
     "",
