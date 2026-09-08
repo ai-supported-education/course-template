@@ -160,8 +160,10 @@ capstone. Fresh subject-agent сверяет охват и современно�
 требует `authorProof`: один выбранный automated check, ожидаемый фрагмент ошибки
 starter, solution patch и минимум один counterexample patch из `course-support`.
 `pnpm author:proof` запускает каждую версию в отдельной копии и публикует только
-hashes evidence, не reference answer. Vitest target может быть обычным `.js` или
-`.mjs`; TypeScript не является обязательным для JavaScript-курса.
+hashes evidence, не reference answer. Закрытые patches временно вкладываются лишь
+в игнорируемый subject-review packet, чтобы независимый предметник мог проверить
+их смысл; novice и consistency их не получают. Vitest target может быть обычным
+`.js` или `.mjs`; TypeScript не является обязательным для JavaScript-курса.
 
 ## Лабораторная и внешняя практика
 

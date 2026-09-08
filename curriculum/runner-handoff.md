@@ -92,4 +92,6 @@ hardware или lab-курсов.
 - `toolchainFiles` перечисляет lockfile и configs, изменение которых устаревает
   техническое доказательство и content-review, но не curriculum hash roadmap.
 - `authorProof` связывает выбранный automated check с solution/counterexample
-  patches в `course-support` и ожидаемой причиной падения starter.
+  patches в `course-support` и ожидаемой причиной падения starter; их
+  reviewer-only копии попадают только в игнорируемый subject packet, чтобы агент
+  мог проверить смысл отрицательных контролей.

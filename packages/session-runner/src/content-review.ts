@@ -23,7 +23,7 @@ import {
   SOURCE_LEDGER_PATH,
   type SourceLedger
 } from "./source-ledger.js";
-import { readSupportFile } from "./support.js";
+import { readSupportFile, type SupportLoader } from "./support.js";
 import { loadToolchainDocuments } from "./toolchain.js";
 import type {
   CourseManifest,
@@ -43,6 +43,7 @@ export const CONTENT_REVIEW_PROTOCOL =
   "novice-walkthrough-consistency-v8" as const;
 export const CONTENT_REVIEW_PROTOCOL_V3 =
   "roadmap-subject-novice-consistency-v1" as const;
+const CONTENT_REVIEW_PACKET_REVISION = "subject-proof-patches-v1" as const;
 export const CONTENT_REVIEW_OPENING_MARKER =
   "<!-- content-review:opening:end -->" as const;
 export const LEARNER_FACING_LANGUAGE_PATH =
@@ -242,7 +243,8 @@ const maxInlineBytes = 256 * 1024;
 export async function prepareContentReview(
   root: string,
   scope: ContentReviewScope,
-  id: string
+  id: string,
+  supportLoader: SupportLoader = readSupportFile
 ): Promise<PreparedContentReview> {
   const target = await resolveTarget(root, scope, id);
   const protocol = contentReviewProtocol(target.manifest);
@@ -281,7 +283,7 @@ export async function prepareContentReview(
   if (subjectPacketPath) {
     await writeFile(
       subjectPacketPath,
-      await buildSubjectPacket(root, target, contentHash),
+      await buildSubjectPacket(root, target, contentHash, supportLoader),
       "utf8"
     );
   }
@@ -654,6 +656,8 @@ async function hashReviewTarget(root: string, target: ReviewTarget): Promise<str
   hash.update("\0");
 
   if (protocol === CONTENT_REVIEW_PROTOCOL_V3) {
+    hash.update(`packet-revision:${CONTENT_REVIEW_PACKET_REVISION}`);
+    hash.update("\0");
     const ledger = relevantSourceLedger(await loadSourceLedger(root), target);
     hash.update(`source-ledger:${SOURCE_LEDGER_PATH}`);
     hash.update("\0");
@@ -1272,7 +1276,8 @@ async function buildConsistencyPacket(
 async function buildSubjectPacket(
   root: string,
   target: ReviewTarget,
-  contentHash: string
+  contentHash: string,
+  supportLoader: SupportLoader
 ): Promise<string> {
   const ledger = relevantSourceLedger(await loadSourceLedger(root), target);
   const toolchain = await loadToolchainDocuments(
@@ -1287,7 +1292,7 @@ async function buildSubjectPacket(
     "",
     "## Reviewer contract",
     "",
-    "Вы — независимый fresh subject-reviewer без истории генерации. Получите только этот packet: не открывайте repository, novice/consistency packets, reports, hints или solutions.",
+    "Вы — независимый fresh subject-reviewer без истории генерации. Получите только этот packet: не открывайте repository, novice/consistency packets, reports или сам ref course-support. Reviewer-only patches уже вложены ниже; не цитируйте их код и не переносите готовое решение в отчёт.",
     "Проверьте предметную корректность и современность learner contract, затем сверите её с author contract, source ledger и фактическими toolchain documents. Source ledger задаёт проверяемые источники, но не заменяет проверку того, что источник действительно поддерживает конкретное утверждение.",
     "Для каждого существенного утверждения отличайте стандарт языка от host API, поведения runtime/engine и преобразований toolchain. Не переносите наблюдение одной версии или среды на все реализации без доказательства; inference называйте inference.",
     "Проверьте, что author contract, rubric, checks и acceptance evidence не требуют и не закрепляют предметно неверную модель. Для code exercise отдельно оцените заявленный starter failure, минимальный solution proof и counterexamples, не публикуя готовое решение учащемуся.",
@@ -1300,7 +1305,7 @@ async function buildSubjectPacket(
     "",
     "## Author contract",
     "",
-    await renderSubjectAuthorContract(root, target),
+    await renderSubjectAuthorContract(root, target, supportLoader),
     "",
     `## Source ledger (${SOURCE_LEDGER_PATH})`,
     "",
@@ -1404,7 +1409,8 @@ async function renderSubjectLearnerContract(
 
 async function renderSubjectAuthorContract(
   root: string,
-  target: ReviewTarget
+  target: ReviewTarget,
+  supportLoader: SupportLoader
 ): Promise<string> {
   const manifestContract = {
     protocol: CONTENT_REVIEW_PROTOCOL_V3,
@@ -1443,7 +1449,7 @@ async function renderSubjectAuthorContract(
     "",
     "### Recorded author proof evidence",
     "",
-    await renderAuthorProofEvidence(root, target)
+    await renderAuthorProofEvidence(root, target, supportLoader)
   ].join("\n");
 }
 
@@ -1529,13 +1535,14 @@ function sanitizeAuthorProofSummary(value: unknown): unknown {
 
 async function renderAuthorProofEvidence(
   root: string,
-  target: ReviewTarget
+  target: ReviewTarget,
+  supportLoader: SupportLoader
 ): Promise<string> {
   const documents = await loadAuthorProofDocuments(root, target);
   if (documents.length === 0) {
     return "Target не содержит исполняемых карточек с authorProof.";
   }
-  return documents
+  const evidence = documents
     .map((document) =>
       [
         `#### Proof: ${document.path}`,
@@ -1548,6 +1555,49 @@ async function renderAuthorProofEvidence(
       ].join("\n")
     )
     .join("\n\n");
+  const variants = await renderReviewerOnlyProofVariants(
+    root,
+    target,
+    supportLoader
+  );
+  return `${evidence}\n\n${variants}`;
+}
+
+async function renderReviewerOnlyProofVariants(
+  root: string,
+  target: ReviewTarget,
+  supportLoader: SupportLoader
+): Promise<string> {
+  const sections = [
+    "### Reviewer-only proof variants",
+    "",
+    "Эти patches вложены только в игнорируемый author packet. Сверьте их с acceptance test и hashes proof, но не воспроизводите solution code в отчёте."
+  ];
+
+  for (const session of target.targetSessions) {
+    const proof = session.definition.authorProof;
+    if (!proof) continue;
+    const variants = [
+      { label: "Minimal solution", relativePath: proof.solutionPatch },
+      ...proof.counterexamplePatches.map((relativePath, index) => ({
+        label: `Counterexample ${index + 1}`,
+        relativePath
+      }))
+    ];
+    sections.push("", `#### Session ${session.definition.id}`);
+    for (const variant of variants) {
+      sections.push("", `##### ${variant.label}: support/${variant.relativePath}`);
+      try {
+        const source = await supportLoader(root, variant.relativePath);
+        const digest = createHash("sha256").update(source).digest("hex");
+        sections.push("", `SHA-256: ${digest}`, "", "~~~~diff", source.trimEnd(), "~~~~");
+      } catch (error) {
+        sections.push("", `UNAVAILABLE: ${formatError(error)}`);
+      }
+    }
+  }
+
+  return sections.join("\n");
 }
 
 function renderToolchainDocuments(

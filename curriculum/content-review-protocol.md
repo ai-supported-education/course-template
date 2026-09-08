@@ -2,6 +2,10 @@
 
 Protocol id: `roadmap-subject-novice-consistency-v1`.
 
+Ревизия packet builder входит в content hash отдельно от protocol id. Поэтому
+изменение состава sealed packets делает прежние reviews stale без обязательной
+миграции manifest.
+
 Existing repositories may keep `novice-walkthrough-consistency-v8` and schema v2:
 runner still reads that contract. New courses use v3; a legacy attestation does not
 satisfy a v3 publication gate.
@@ -205,6 +209,13 @@ H1 и отдельной строки `Verdict: PASS|NEEDS_REWRITE`, после 
 subject packet. Он не видит novice/consistency reports и не исправляет материал.
 Reviewer сверяет существенные утверждения с `curriculum/source-ledger.json`, при
 необходимости открывает указанные первичные источники и проверяет:
+
+Для исполняемой карточки subject packet также содержит reviewer-only копии
+solution и counterexample patches из `course-support`, их пути и SHA-256 рядом с
+записью author proof. Это единственная фаза, где закрытый код раскрывается
+проверяющему: packet находится в `.authoring/`, а reviewer не цитирует patches в
+отчёте. Если patch недоступен или его digest расходится с proof, предметный PASS
+невозможен.
 
 1. Поддерживает ли источник конкретное утверждение, а не просто близкую тему.
 2. Не смешаны ли ECMAScript/язык, host API, runtime, engine и toolchain.

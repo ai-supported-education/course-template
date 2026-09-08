@@ -389,7 +389,15 @@ describe("author content review", () => {
 
   it("builds a separate subject packet with learner, author, source and toolchain contracts for v3", async () => {
     const root = await createV3Workspace();
-    const prepared = await prepareContentReview(root, "session", "01-02");
+    const prepared = await prepareContentReview(
+      root,
+      "session",
+      "01-02",
+      async (_root, relativePath) =>
+        relativePath.endsWith("minimal.patch")
+          ? "diff --git a/exercise.js b/exercise.js\n+// reviewer-only minimal patch marker\n"
+          : "diff --git a/exercise.js b/exercise.js\n+// reviewer-only counterexample patch marker\n"
+    );
 
     expect(prepared.protocol).toBe(CONTENT_REVIEW_PROTOCOL_V3);
     expect(prepared.stages).toEqual(["subject", "novice", "consistency"]);
@@ -411,6 +419,9 @@ describe("author content review", () => {
     expect(subject).toContain('"status": "PASS"');
     expect(subject).toContain("starter-output-hash-marker");
     expect(subject).toContain('"node": "v24.0.0"');
+    expect(subject).toContain("### Reviewer-only proof variants");
+    expect(subject).toContain("reviewer-only minimal patch marker");
+    expect(subject).toContain("reviewer-only counterexample patch marker");
     expect(subject).toContain("## Source ledger (curriculum/source-ledger.json)");
     expect(subject).toContain("Primary JavaScript source");
     expect(subject).toContain("## Toolchain documents");
