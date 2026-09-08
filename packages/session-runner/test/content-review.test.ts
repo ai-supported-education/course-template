@@ -389,13 +389,15 @@ describe("author content review", () => {
 
   it("builds a separate subject packet with learner, author, source and toolchain contracts for v3", async () => {
     const root = await createV3Workspace();
+    const minimalPatch =
+      "diff --git a/exercise.js b/exercise.js\n+// reviewer-only minimal patch marker\n \n";
     const prepared = await prepareContentReview(
       root,
       "session",
       "01-02",
       async (_root, relativePath) =>
         relativePath.endsWith("minimal.patch")
-          ? "diff --git a/exercise.js b/exercise.js\n+// reviewer-only minimal patch marker\n"
+          ? minimalPatch
           : "diff --git a/exercise.js b/exercise.js\n+// reviewer-only counterexample patch marker\n"
     );
 
@@ -422,6 +424,11 @@ describe("author content review", () => {
     expect(subject).toContain("### Reviewer-only proof variants");
     expect(subject).toContain("reviewer-only minimal patch marker");
     expect(subject).toContain("reviewer-only counterexample patch marker");
+    const minimalHeading = subject.indexOf("##### Minimal solution:");
+    const minimalBodyStart =
+      subject.indexOf("~~~~diff\n", minimalHeading) + "~~~~diff\n".length;
+    const minimalBodyEnd = subject.indexOf("~~~~", minimalBodyStart);
+    expect(subject.slice(minimalBodyStart, minimalBodyEnd)).toBe(minimalPatch);
     expect(subject).toContain("## Source ledger (curriculum/source-ledger.json)");
     expect(subject).toContain("Primary JavaScript source");
     expect(subject).toContain("## Toolchain documents");

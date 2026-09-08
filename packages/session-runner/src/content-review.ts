@@ -1590,7 +1590,12 @@ async function renderReviewerOnlyProofVariants(
       try {
         const source = await supportLoader(root, variant.relativePath);
         const digest = createHash("sha256").update(source).digest("hex");
-        sections.push("", `SHA-256: ${digest}`, "", "~~~~diff", source.trimEnd(), "~~~~");
+        if (!source.endsWith("\n")) {
+          throw new Error(
+            `Support patch ${variant.relativePath} должен завершаться переводом строки.`
+          );
+        }
+        sections.push("", `SHA-256: ${digest}`, "", "~~~~diff", source.slice(0, -1), "~~~~");
       } catch (error) {
         sections.push("", `UNAVAILABLE: ${formatError(error)}`);
       }
