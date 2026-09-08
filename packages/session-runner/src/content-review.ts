@@ -1547,7 +1547,7 @@ async function renderAuthorProofEvidence(
       [
         `#### Proof: ${document.path}`,
         "",
-        "Packet показывает только статусы и hashes; исходный solution, вывод команд и quiz answers не раскрываются.",
+        "Статусная запись показывает runtime и hashes. Проверяемые patches вложены ниже только для subject-review; вывод команд и quiz answers не раскрываются.",
         "",
         "```json",
         JSON.stringify(document.summary, null, 2),
